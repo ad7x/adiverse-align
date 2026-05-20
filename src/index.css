@@ -1,0 +1,107 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 10%;
+    
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 10%;
+
+    --border: 0 0% 88%;
+    --input: 0 0% 88%;
+    
+    --primary: 217 91% 60%; /* Blue */
+    --primary-foreground: 0 0% 100%;
+    
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 40%;
+    
+    --sidebar: 0 0% 96%;
+    --sidebar-border: 0 0% 90%;
+  }
+  
+[data-theme-color="blue"] {
+    --primary: 217 91% 60%;
+  }
+  [data-theme-color="purple"] {
+    --primary: 270 70% 60%;
+  }
+  [data-theme-color="green"] {
+    --primary: 152 60% 45%;
+  }
+  [data-theme-color="red"] {
+    --primary: 0 84% 65%;
+  }
+  [data-theme-color="orange"] {
+    --primary: 24 95% 55%;
+  }
+  [data-theme-color="zinc"] {
+    --primary: 240 5% 65%;
+  }
+  
+  .dark {
+    --background: 0 0% 4%; /* #0a0a0a is HSL 0 0% 4% */
+    --foreground: 0 0% 98%;
+
+    --card: 0 0% 8%; 
+    --card-foreground: 0 0% 98%;
+
+    --border: 0 0% 15%;
+    --input: 0 0% 15%;
+
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 98%;
+
+    --muted: 0 0% 12%;
+    --muted-foreground: 0 0% 64%;
+
+    --sidebar: 0 0% 6%;
+    --sidebar-border: 0 0% 12%;
+  }
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: var(--font-sans);
+  }
+}
+
+/* Base custom scrollbar to match theme */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--muted-foreground) / 0.6);
+}
+
+/* Glass effect utilities */
+.glass-panel {
+  background: rgba(20, 20, 20, 0.4);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+.light .glass-panel {
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}

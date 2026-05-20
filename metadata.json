@@ -1,0 +1,6 @@
+{
+  "name": "Adiverse Align",
+  "description": "Premium structured learning / execution operating system",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
