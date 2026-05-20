@@ -1,9 +1,26 @@
-// Multiple Piped API instances for reliability
-const PIPED_INSTANCES = [
+const HARDCODED_FALLBACKS = [
+  'https://api.piped.private.coffee',
   'https://pipedapi.kavin.rocks',
   'https://pipedapi.adminforge.de',
-  'https://pipedapi.in.projectsegfau.lt',
 ];
+
+async function getPipedAPIInstances(): Promise<string[]> {
+  try {
+    const res = await fetch('https://piped-instances.kavin.rocks/');
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        const urls = data
+          .filter((inst: any) => inst.api_url && inst.uptime_24h > 90)
+          .map((inst: any) => inst.api_url);
+        if (urls.length > 0) return urls;
+      }
+    }
+  } catch (err) {
+    // Ignore and fallback
+  }
+  return HARDCODED_FALLBACKS;
+}
 
 const FETCH_TIMEOUT_MS = 10000;
 
@@ -132,7 +149,9 @@ export async function fetchPlaylist(
   const playlistId = extractPlaylistId(playlistUrl);
   const errors: string[] = [];
 
-  for (const instance of PIPED_INSTANCES) {
+  const instances = await getPipedAPIInstances();
+
+  for (const instance of instances) {
     try {
       return await fetchFromInstance(instance, playlistId, existingVideoIds);
     } catch (err: any) {

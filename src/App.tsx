@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import { AppLayout } from './components/layout/AppLayout';
 import { useUIStore } from './store';
 import { HomeView } from './components/views/HomeView';

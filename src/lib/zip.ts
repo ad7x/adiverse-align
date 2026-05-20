@@ -47,7 +47,7 @@ export async function importWorkspaceZip(file: File, mode: 'replace' | 'merge') 
 
   if (mode === 'replace') {
     // Clear everything first (including media), then restore atomically
-    await db.transaction('rw', db.categories, db.domains, db.subjects, db.subjectInstances, db.tasks, db.settings, db.media, async () => {
+    await db.transaction('rw', [db.categories, db.domains, db.subjects, db.subjectInstances, db.tasks, db.settings, db.media], async () => {
       await db.categories.clear();
       await db.domains.clear();
       await db.subjects.clear();
@@ -63,7 +63,7 @@ export async function importWorkspaceZip(file: File, mode: 'replace' | 'merge') 
       if (data.settings) await db.settings.put(data.settings);
     });
   } else {
-    await db.transaction('rw', db.categories, db.domains, db.subjects, db.subjectInstances, db.tasks, async () => {
+    await db.transaction('rw', [db.categories, db.domains, db.subjects, db.subjectInstances, db.tasks], async () => {
       if (data.categories) await db.categories.bulkPut(data.categories);
       if (data.domains) await db.domains.bulkPut(data.domains);
       if (data.subjects) await db.subjects.bulkPut(data.subjects);

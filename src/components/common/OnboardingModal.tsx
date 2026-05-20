@@ -23,16 +23,16 @@ export function OnboardingModal() {
     <AnimatePresence>
       <motion.div 
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 bg-black backdrop-blur-md flex items-center justify-center p-4"
+        className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4"
       >
         <motion.div 
           initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }}
-          className="max-w-md w-full"
+          className="max-w-md w-full bg-[hsl(var(--card))] border border-[hsl(var(--border))] p-8 rounded-[32px] shadow-2xl"
         >
           <div className="flex justify-center mb-8">
             <img src="https://www.gstatic.com/lamda/images/gemini_sparkle_aurora_33f86dc0c0257da337c63.svg" className="w-12 h-12" alt="Aurora Logo" />
           </div>
-          <h1 className="text-3xl font-semibold text-center text-white mb-8 tracking-tight">What should we call you?</h1>
+          <h1 className="text-3xl font-semibold text-center text-[hsl(var(--foreground))] mb-8 tracking-tight">What should we call you?</h1>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <input 
               autoFocus
@@ -40,12 +40,12 @@ export function OnboardingModal() {
               value={name} 
               onChange={e => setName(e.target.value)}
               placeholder="Your name..."
-              className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-xl text-white outline-none focus:border-blue-500/50 focus:bg-white/10 transition-all text-center placeholder:text-zinc-600"
+              className="w-full bg-[hsl(var(--background))] border border-[hsl(var(--border))] rounded-2xl px-6 py-4 text-xl text-[hsl(var(--foreground))] outline-none focus:border-[hsl(var(--primary))] transition-all text-center placeholder:text-[hsl(var(--muted-foreground))]"
             />
             <button 
               type="submit"
               disabled={!name.trim()}
-              className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-4 rounded-2xl transition-colors disabled:opacity-50 disabled:hover:bg-blue-600"
+              className="w-full bg-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/0.9)] text-[hsl(var(--primary-foreground))] font-medium py-4 rounded-2xl transition-colors disabled:opacity-50"
             >
               Continue
             </button>

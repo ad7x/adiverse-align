@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { db } from '../../db';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Moon, Sun, Download, Upload, Trash2, UserCircle, Plus, Pencil, GripVertical, Palette, CheckSquare } from 'lucide-react';
+import { Moon, Sun, Download, Upload, Trash2, UserCircle, Plus, Pencil, GripVertical, Palette, CheckSquare, X } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 
@@ -78,7 +78,7 @@ export function SettingsView() {
       const data = JSON.parse(jsonStr);
       if (data.categories && data.domains && data.subjects && data.tasks) {
         if (importMode === 'replace') {
-           await db.transaction('rw', db.categories, db.domains, db.subjects, db.subjectInstances, db.tasks, async () => {
+           await db.transaction('rw', [db.categories, db.domains, db.subjects, db.subjectInstances, db.tasks], async () => {
              await db.categories.clear();
              await db.domains.clear();
              await db.subjects.clear();
@@ -91,7 +91,7 @@ export function SettingsView() {
              await db.tasks.bulkAdd(data.tasks);
            });
         } else {
-           await db.transaction('rw', db.categories, db.domains, db.subjects, db.subjectInstances, db.tasks, async () => {
+           await db.transaction('rw', [db.categories, db.domains, db.subjects, db.subjectInstances, db.tasks], async () => {
              await db.categories.bulkPut(data.categories);
              await db.domains.bulkPut(data.domains);
              await db.subjects.bulkPut(data.subjects);
@@ -215,13 +215,6 @@ export function SettingsView() {
                         color === 'green' ? 'hsl(152 60% 45%)' :
                         color === 'red' ? 'hsl(0 84% 65%)' :
                         color === 'orange' ? 'hsl(24 95% 55%)' :
-                        'hsl(240 5% 65%)',
-                      ringColor: 
-                        color === 'blue' ? 'hsl(217 91% 60%)' :
-                        color === 'purple' ? 'hsl(270 70% 60%)' :
-                        color === 'green' ? 'hsl(152 60% 45%)' :
-                        color === 'red' ? 'hsl(0 84% 65%)' :
-                        color === 'orange' ? 'hsl(24 95% 55%)' :
                         'hsl(240 5% 65%)'
                     }}
                   />
@@ -246,7 +239,7 @@ export function SettingsView() {
                     className={`flex flex-col items-center gap-3 p-4 rounded-2xl border-2 transition-all ${settings?.checkmarkStyle === style || (!settings?.checkmarkStyle && style === 'modern') ? 'border-[hsl(var(--primary))] bg-[hsl(var(--primary)/0.05)] shadow-lg' : 'border-[hsl(var(--border))] hover:border-[hsl(var(--primary)/0.5)] hover:bg-[hsl(var(--muted)/0.3)]'}`}
                   >
                     <div className="pointer-events-none scale-125 mb-1">
-                      <PremiumCheckbox checked={true} onChange={() => {}} styleVariant={style} />
+                      <PremiumCheckbox checked={true} onChange={() => {}} variant={style} />
                     </div>
                     <span className="text-xs font-semibold uppercase tracking-wider text-[hsl(var(--foreground))] text-center">
                       {style.replace('-', ' ')}
@@ -346,32 +339,15 @@ export function SettingsView() {
           </div>
         </section>
 
-        <section>
-          <h2 className="text-sm font-semibold uppercase tracking-widest text-[hsl(var(--primary))] mb-4">App Installation (PWA)</h2>
-          <div className="bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-2xl overflow-hidden shadow-sm flex flex-col">
-            <div className="p-6 flex items-center justify-between border-b border-[hsl(var(--border))]">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-[hsl(var(--primary)/0.1)] rounded-full text-[hsl(var(--primary))]"><Download size={20} /></div>
-                <div>
-                  <div className="font-medium text-lg">Install Adiverse</div>
-                  <div className="text-sm text-[hsl(var(--muted-foreground))]">Install as a standalone native app for offline use.</div>
-                </div>
-              </div>
-              <button className="px-6 py-2 rounded-xl bg-[hsl(var(--primary))] text-white font-medium text-sm">Install App</button>
-            </div>
-            <div className="p-6 flex flex-col gap-2 text-sm text-[hsl(var(--muted-foreground))]">
-               <div className="flex justify-between"><span>Version:</span> <span className="font-mono text-[hsl(var(--foreground))]">v2.1.0-alpha</span></div>
-               <div className="flex justify-between"><span>Storage Usage:</span> <span className="font-mono text-[hsl(var(--foreground))]">Calculating...</span></div>
-            </div>
-          </div>
-        </section>
+
       </div>
 
       <AnimatePresence>
         {isImportOpen && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="w-full max-w-lg bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-2xl shadow-xl overflow-hidden flex flex-col p-6">
-               <h2 className="text-2xl font-semibold mb-6">Import Workspace</h2>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setIsImportOpen(false)} onKeyDown={e => { if (e.key === 'Escape') setIsImportOpen(false); }}>
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="w-full max-w-lg bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-2xl shadow-xl overflow-hidden flex flex-col p-6 relative" onClick={e => e.stopPropagation()}>
+               <button onClick={() => setIsImportOpen(false)} className="absolute top-4 right-4 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] p-1"><X size={18} /></button>
+               <h2 className="text-2xl font-semibold mb-6 text-[hsl(var(--foreground))]">Import Workspace</h2>
                
                <div className="flex flex-col gap-4">
                  
@@ -394,12 +370,12 @@ export function SettingsView() {
                  <textarea 
                    value={importPasteData} onChange={e => setImportPasteData(e.target.value)} 
                    placeholder="Paste workspace JSON here..."
-                   className="w-full h-32 bg-[hsl(var(--background))] border border-[hsl(var(--border))] rounded-xl p-3 text-sm font-mono focus:border-[hsl(var(--primary))] outline-none resize-none"
+                   className="w-full h-32 bg-[hsl(var(--background))] border border-[hsl(var(--border))] rounded-xl p-3 text-sm font-mono focus:border-[hsl(var(--primary))] outline-none resize-none text-[hsl(var(--foreground))]"
                  />
                </div>
 
                <div className="flex gap-3 justify-end mt-6">
-                 <button onClick={() => setIsImportOpen(false)} className="px-4 py-2 rounded-xl hover:bg-[hsl(var(--muted))] text-sm font-medium transition-colors">Cancel</button>
+                 <button onClick={() => setIsImportOpen(false)} className="px-4 py-2 rounded-xl hover:bg-[hsl(var(--muted))] text-sm font-medium transition-colors text-[hsl(var(--foreground))]">Cancel</button>
                  <button onClick={() => processFullImport(importPasteData)} className="px-5 py-2 rounded-xl bg-[hsl(var(--primary))] text-white text-sm font-medium transition-colors">Import Data</button>
                </div>
             </motion.div>

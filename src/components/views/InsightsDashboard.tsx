@@ -1,410 +1,253 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../db';
-import {
-  subDays,
-  startOfDay,
-  format,
-  eachDayOfInterval,
-  startOfWeek,
-  addWeeks,
-  getDay,
-  differenceInCalendarDays,
-  isSameDay,
-} from 'date-fns';
-import { Calendar, Target, TrendingUp, ChevronDown, Flame } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import type { Task } from '../../types';
+import { startOfDay, startOfWeek, startOfMonth, subDays, format, eachDayOfInterval, getDay } from 'date-fns';
+import { CheckCircle, Calendar, TrendingUp, ChevronDown, ChevronUp } from 'lucide-react';
 
-// ─── Heatmap helpers ───────────────────────────────────────────────
-type DayData = { date: Date; count: number };
-
-function getIntensityClass(count: number): string {
-  if (count === 0) return 'heatmap-empty';
-  if (count <= 2) return 'heatmap-low';
-  if (count <= 5) return 'heatmap-mid';
-  return 'heatmap-high';
-}
-
-function buildHeatmapGrid(completedTasks: Task[]): {
-  weeks: DayData[][];
-  monthLabels: { label: string; col: number }[];
-} {
-  const today = new Date();
-  // Start from 52 weeks ago, on a Sunday
-  const gridStart = startOfWeek(subDays(today, 52 * 7), { weekStartsOn: 0 });
-  const gridEnd = today;
-
-  const allDays = eachDayOfInterval({ start: gridStart, end: gridEnd });
-
-  // Build a count map: "YYYY-MM-DD" → count
-  const countMap = new Map<string, number>();
-  for (const t of completedTasks) {
-    if (!t.completedAt) continue;
-    const key = format(startOfDay(new Date(t.completedAt)), 'yyyy-MM-dd');
-    countMap.set(key, (countMap.get(key) || 0) + 1);
-  }
-
-  // Group days into weeks (columns)
-  const weeks: DayData[][] = [];
-  let currentWeek: DayData[] = [];
-
-  for (const day of allDays) {
-    const dayOfWeek = getDay(day); // 0=Sun
-    if (dayOfWeek === 0 && currentWeek.length > 0) {
-      weeks.push(currentWeek);
-      currentWeek = [];
-    }
-    const key = format(day, 'yyyy-MM-dd');
-    currentWeek.push({ date: day, count: countMap.get(key) || 0 });
-  }
-  if (currentWeek.length > 0) weeks.push(currentWeek);
-
-  // Month labels
-  const monthLabels: { label: string; col: number }[] = [];
-  let lastMonth = -1;
-  for (let w = 0; w < weeks.length; w++) {
-    const firstDay = weeks[w][0];
-    const month = firstDay.date.getMonth();
-    if (month !== lastMonth) {
-      monthLabels.push({ label: format(firstDay.date, 'MMM'), col: w });
-      lastMonth = month;
-    }
-  }
-
-  return { weeks, monthLabels };
-}
-
-// ─── Stat Card ─────────────────────────────────────────────────────
-interface StatCardProps {
-  icon: React.ReactNode;
-  label: string;
-  count: number;
-  tasks: Task[];
-  delay: number;
-}
-
-function StatCard({ icon, label, count, tasks, delay }: StatCardProps) {
-  const [expanded, setExpanded] = useState(false);
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, delay }}
-      className="bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-2xl shadow-sm overflow-hidden cursor-pointer select-none"
-      onClick={() => setExpanded(!expanded)}
-    >
-      <div className="p-6 flex items-start justify-between">
-        <div>
-          <div className="flex items-center gap-3 text-[hsl(var(--muted-foreground))] mb-3">
-            {icon}
-            <h3 className="font-medium text-xs tracking-widest uppercase">{label}</h3>
-          </div>
-          <div className="text-4xl font-bold text-[hsl(var(--foreground))] tabular-nums">{count}</div>
-          <p className="text-sm text-[hsl(var(--muted-foreground))] mt-1.5">
-            {count === 1 ? 'task completed' : 'tasks completed'}
-          </p>
-        </div>
-        <motion.div
-          animate={{ rotate: expanded ? 180 : 0 }}
-          transition={{ duration: 0.2 }}
-          className="text-[hsl(var(--muted-foreground))] mt-1"
-        >
-          <ChevronDown size={18} />
-        </motion.div>
-      </div>
-
-      <AnimatePresence>
-        {expanded && tasks.length > 0 && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.25 }}
-            className="overflow-hidden"
-          >
-            <div className="border-t border-[hsl(var(--border))] px-6 py-3 max-h-52 overflow-y-auto space-y-2">
-              {tasks.map((t) => (
-                <div key={t.id} className="flex items-center justify-between gap-4 py-1.5">
-                  <span className="text-sm text-[hsl(var(--foreground))] truncate flex-1">
-                    {t.title}
-                  </span>
-                  <span className="text-xs text-[hsl(var(--muted-foreground))] whitespace-nowrap">
-                    {t.completedAt
-                      ? format(new Date(t.completedAt), 'MMM d, h:mm a')
-                      : '—'}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </motion.div>
-        )}
-        {expanded && tasks.length === 0 && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.25 }}
-            className="overflow-hidden"
-          >
-            <div className="border-t border-[hsl(var(--border))] px-6 py-4 text-sm text-[hsl(var(--muted-foreground))]">
-              No completions in this period.
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
-  );
-}
-
-// ─── Heatmap Tooltip ───────────────────────────────────────────────
-function HeatmapCell({ day }: { day: DayData }) {
-  const [hovered, setHovered] = useState(false);
-  const intensityClass = getIntensityClass(day.count);
-
-  return (
-    <div
-      className="relative"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      <div
-        className={`w-[13px] h-[13px] rounded-[3px] transition-colors duration-150 ${intensityClass}`}
-      />
-      <AnimatePresence>
-        {hovered && (
-          <motion.div
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 4 }}
-            transition={{ duration: 0.15 }}
-            className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 pointer-events-none"
-          >
-            <div className="bg-[hsl(var(--foreground))] text-[hsl(var(--background))] text-xs font-medium px-2.5 py-1.5 rounded-lg whitespace-nowrap shadow-lg">
-              <span className="font-semibold">{day.count} {day.count === 1 ? 'task' : 'tasks'}</span>
-              <span className="opacity-75 ml-1">on {format(day.date, 'MMM d, yyyy')}</span>
-            </div>
-            <div className="w-2 h-2 bg-[hsl(var(--foreground))] rotate-45 absolute left-1/2 -translate-x-1/2 -bottom-1" />
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-// ─── Main Component ────────────────────────────────────────────────
 export function InsightsDashboard() {
-  const tasks = useLiveQuery(() => db.tasks.toArray());
+  const tasks = useLiveQuery(() => db.tasks.toArray()) || [];
+  const [expandedCard, setExpandedCard] = useState<string | null>(null);
 
   const now = new Date();
   const todayStart = startOfDay(now);
-  const weekStart = subDays(now, 7);
-  const monthStart = subDays(now, 30);
+  const weekStart = startOfWeek(now, { weekStartsOn: 1 });
+  const monthStart = startOfMonth(now);
 
-  const completedTasks = useMemo(
-    () => (tasks?.filter((t) => t.completed && t.completedAt) || []),
+  const completedTasks = useMemo(() =>
+    tasks.filter(t => t.completed && t.completedAt),
     [tasks]
   );
 
-  const todayTasks = useMemo(
-    () =>
-      completedTasks
-        .filter((t) => new Date(t.completedAt!) >= todayStart)
-        .sort((a, b) => new Date(b.completedAt!).getTime() - new Date(a.completedAt!).getTime()),
+  const todayTasks = useMemo(() =>
+    completedTasks.filter(t => new Date(t.completedAt!) >= todayStart),
     [completedTasks, todayStart]
   );
 
-  const weekTasks = useMemo(
-    () =>
-      completedTasks
-        .filter((t) => new Date(t.completedAt!) >= weekStart)
-        .sort((a, b) => new Date(b.completedAt!).getTime() - new Date(a.completedAt!).getTime()),
+  const weekTasks = useMemo(() =>
+    completedTasks.filter(t => new Date(t.completedAt!) >= weekStart),
     [completedTasks, weekStart]
   );
 
-  const monthTasks = useMemo(
-    () =>
-      completedTasks
-        .filter((t) => new Date(t.completedAt!) >= monthStart)
-        .sort((a, b) => new Date(b.completedAt!).getTime() - new Date(a.completedAt!).getTime()),
+  const monthTasks = useMemo(() =>
+    completedTasks.filter(t => new Date(t.completedAt!) >= monthStart),
     [completedTasks, monthStart]
   );
 
-  const { weeks, monthLabels } = useMemo(
-    () => buildHeatmapGrid(completedTasks),
-    [completedTasks]
-  );
+  // ─── Heatmap data (past 365 days) ─────────────────────────────
 
-  // Streak calculation
-  const streak = useMemo(() => {
-    let count = 0;
-    let checkDate = todayStart;
+  const heatmapData = useMemo(() => {
+    const end = startOfDay(now);
+    const start = subDays(end, 364);
+    const days = eachDayOfInterval({ start, end });
+
     const countMap = new Map<string, number>();
     for (const t of completedTasks) {
       if (!t.completedAt) continue;
-      const key = format(startOfDay(new Date(t.completedAt)), 'yyyy-MM-dd');
+      const key = format(new Date(t.completedAt), 'yyyy-MM-dd');
       countMap.set(key, (countMap.get(key) || 0) + 1);
     }
 
-    // Check today first; if no tasks today, start from yesterday
-    const todayKey = format(todayStart, 'yyyy-MM-dd');
-    if (!countMap.has(todayKey)) {
-      checkDate = subDays(todayStart, 1);
-    }
+    return days.map(d => ({
+      date: d,
+      dateStr: format(d, 'yyyy-MM-dd'),
+      display: format(d, 'MMM d, yyyy'),
+      count: countMap.get(format(d, 'yyyy-MM-dd')) || 0,
+      dayOfWeek: getDay(d),
+    }));
+  }, [completedTasks, now]);
 
-    while (true) {
-      const key = format(checkDate, 'yyyy-MM-dd');
-      if (countMap.has(key)) {
-        count++;
-        checkDate = subDays(checkDate, 1);
-      } else {
-        break;
+  // Group into weeks for grid layout
+  const weeks = useMemo(() => {
+    const result: typeof heatmapData[number][][] = [];
+    let currentWeek: typeof heatmapData[number][] = [];
+
+    // Pad first week with empty slots
+    if (heatmapData.length > 0) {
+      const firstDow = heatmapData[0].dayOfWeek;
+      // Monday-based: adjust so Mon=0
+      const adjusted = (firstDow + 6) % 7;
+      for (let i = 0; i < adjusted; i++) {
+        currentWeek.push(null as any);
       }
     }
-    return count;
-  }, [completedTasks, todayStart]);
 
-  const dayLabels = ['', 'Mon', '', 'Wed', '', 'Fri', ''];
+    for (const day of heatmapData) {
+      const adjDow = (day.dayOfWeek + 6) % 7; // Mon=0
+      if (adjDow === 0 && currentWeek.length > 0) {
+        result.push(currentWeek);
+        currentWeek = [];
+      }
+      currentWeek.push(day);
+    }
+    if (currentWeek.length > 0) result.push(currentWeek);
+
+    return result;
+  }, [heatmapData]);
+
+  // Month labels
+  const monthLabels = useMemo(() => {
+    const labels: { label: string; weekIdx: number }[] = [];
+    let lastMonth = -1;
+    weeks.forEach((week, wIdx) => {
+      for (const day of week) {
+        if (!day) continue;
+        const m = day.date.getMonth();
+        if (m !== lastMonth) {
+          labels.push({ label: format(day.date, 'MMM'), weekIdx: wIdx });
+          lastMonth = m;
+        }
+        break;
+      }
+    });
+    return labels;
+  }, [weeks]);
+
+  const getIntensity = (count: number): string => {
+    if (count === 0) return 'bg-[hsl(var(--muted)/0.4)]';
+    if (count <= 2) return 'bg-[hsl(var(--primary)/0.25)]';
+    if (count <= 5) return 'bg-[hsl(var(--primary)/0.5)]';
+    return 'bg-[hsl(var(--primary)/0.85)]';
+  };
+
+  const [hoverDay, setHoverDay] = useState<{ display: string; count: number; x: number; y: number } | null>(null);
+
+  const statCards = [
+    { id: 'today', label: 'Today', count: todayTasks.length, tasks: todayTasks, icon: CheckCircle, color: 'hsl(var(--primary))' },
+    { id: 'week', label: 'This Week', count: weekTasks.length, tasks: weekTasks, icon: Calendar, color: 'hsl(152 60% 45%)' },
+    { id: 'month', label: 'This Month', count: monthTasks.length, tasks: monthTasks, icon: TrendingUp, color: 'hsl(24 95% 55%)' },
+  ];
 
   return (
-    <div className="w-full flex flex-col gap-6 mt-12 mb-20 z-10 relative">
-      {/* Inline styles for heatmap cells — uses CSS custom properties */}
-      <style>{`
-        .heatmap-empty {
-          background-color: hsl(var(--muted) / 0.4);
-        }
-        .heatmap-low {
-          background-color: hsl(var(--primary) / 0.3);
-        }
-        .heatmap-mid {
-          background-color: hsl(var(--primary) / 0.6);
-        }
-        .heatmap-high {
-          background-color: hsl(var(--primary) / 0.95);
-        }
-      `}</style>
+    <div className="space-y-8">
+      {/* ─── Stat Cards ──────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {statCards.map((card, idx) => (
+          <motion.div
+            key={card.id}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: idx * 0.08 }}
+            className="bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-2xl p-5 cursor-pointer hover:border-[hsl(var(--primary)/0.4)] transition-all group"
+            onClick={() => setExpandedCard(expandedCard === card.id ? null : card.id)}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: `${card.color}20` }}>
+                  <card.icon size={20} style={{ color: card.color }} />
+                </div>
+                <div>
+                  <div className="text-2xl font-bold text-[hsl(var(--foreground))]">{card.count}</div>
+                  <div className="text-xs font-medium text-[hsl(var(--muted-foreground))] uppercase tracking-wider">{card.label}</div>
+                </div>
+              </div>
+              {expandedCard === card.id ? <ChevronUp size={16} className="text-[hsl(var(--muted-foreground))]" /> : <ChevronDown size={16} className="text-[hsl(var(--muted-foreground))]" />}
+            </div>
 
-      {/* ─── Stat Cards ─────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        <StatCard
-          icon={<Target size={18} />}
-          label="Today"
-          count={todayTasks.length}
-          tasks={todayTasks}
-          delay={0}
-        />
-        <StatCard
-          icon={<TrendingUp size={18} />}
-          label="This Week"
-          count={weekTasks.length}
-          tasks={weekTasks}
-          delay={0.08}
-        />
-        <StatCard
-          icon={<Calendar size={18} />}
-          label="This Month"
-          count={monthTasks.length}
-          tasks={monthTasks}
-          delay={0.16}
-        />
+            <AnimatePresence>
+              {expandedCard === card.id && card.tasks.length > 0 && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="overflow-hidden mt-4 border-t border-[hsl(var(--border))] pt-3"
+                >
+                  <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
+                    {card.tasks.slice(0, 20).map(t => (
+                      <div key={t.id} className="flex items-center justify-between text-sm">
+                        <span className="text-[hsl(var(--foreground))] truncate flex-1 mr-2">{t.title || 'Untitled task'}</span>
+                        <span className="text-[10px] text-[hsl(var(--muted-foreground))] font-mono shrink-0">
+                          {t.completedAt ? format(new Date(t.completedAt), 'HH:mm') : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        ))}
       </div>
 
-      {/* ─── Streak Banner ──────────────────────────────────────── */}
-      {streak > 0 && (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.96 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.4, delay: 0.2 }}
-          className="flex items-center gap-3 px-5 py-3.5 rounded-xl bg-[hsl(var(--primary)/0.1)] border border-[hsl(var(--primary)/0.2)]"
-        >
-          <Flame size={20} className="text-[hsl(var(--primary))]" />
-          <span className="text-sm font-medium text-[hsl(var(--foreground))]">
-            <span className="text-[hsl(var(--primary))] font-bold">{streak}-day streak!</span>
-            <span className="text-[hsl(var(--muted-foreground))] ml-1.5">Keep it going.</span>
-          </span>
-        </motion.div>
-      )}
-
-      {/* ─── Contribution Heatmap ───────────────────────────────── */}
+      {/* ─── GitHub-style Contribution Heatmap ───────────────────── */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.24 }}
-        className="bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-2xl p-6 shadow-sm"
+        transition={{ delay: 0.3 }}
+        className="bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-2xl p-6"
       >
-        <div className="flex items-center justify-between mb-5">
-          <div className="flex items-center gap-3 text-[hsl(var(--muted-foreground))]">
-            <Calendar size={18} />
-            <h3 className="font-medium text-xs tracking-widest uppercase">Contributions</h3>
+        <h3 className="text-sm font-semibold text-[hsl(var(--foreground))] mb-4 flex items-center gap-2">
+          <Calendar size={16} className="text-[hsl(var(--primary))]" />
+          Activity — Past Year
+        </h3>
+
+        <div className="overflow-x-auto custom-scrollbar relative">
+          {/* Month labels */}
+          <div className="flex gap-[3px] mb-1 pl-8" style={{ minWidth: weeks.length * 15 }}>
+            {monthLabels.map((m, i) => (
+              <div
+                key={i}
+                className="text-[10px] text-[hsl(var(--muted-foreground))] font-medium absolute"
+                style={{ left: 32 + m.weekIdx * 15 }}
+              >
+                {m.label}
+              </div>
+            ))}
           </div>
-          <div className="flex items-center gap-2 text-[10px] text-[hsl(var(--muted-foreground))]">
-            <span>Less</span>
-            <div className="flex gap-[3px]">
-              <div className="w-[11px] h-[11px] rounded-[2px] heatmap-empty" />
-              <div className="w-[11px] h-[11px] rounded-[2px] heatmap-low" />
-              <div className="w-[11px] h-[11px] rounded-[2px] heatmap-mid" />
-              <div className="w-[11px] h-[11px] rounded-[2px] heatmap-high" />
+
+          <div className="flex gap-[3px] mt-5 relative">
+            {/* Day labels */}
+            <div className="flex flex-col gap-[3px] pr-1 shrink-0 w-7">
+              {['', 'Mon', '', 'Wed', '', 'Fri', ''].map((d, i) => (
+                <div key={i} className="h-[12px] text-[9px] text-[hsl(var(--muted-foreground))] flex items-center justify-end font-medium">
+                  {d}
+                </div>
+              ))}
             </div>
+
+            {/* Weeks grid */}
+            {weeks.map((week, wIdx) => (
+              <div key={wIdx} className="flex flex-col gap-[3px]">
+                {Array.from({ length: 7 }).map((_, dayIdx) => {
+                  const day = week[dayIdx];
+                  if (!day) return <div key={dayIdx} className="w-[12px] h-[12px]" />;
+                  return (
+                    <div
+                      key={dayIdx}
+                      className={`w-[12px] h-[12px] rounded-[2px] transition-colors ${getIntensity(day.count)} hover:ring-1 hover:ring-[hsl(var(--foreground)/0.3)]`}
+                      onMouseEnter={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        setHoverDay({ display: day.display, count: day.count, x: rect.left, y: rect.top });
+                      }}
+                      onMouseLeave={() => setHoverDay(null)}
+                    />
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+
+          {/* Legend */}
+          <div className="flex items-center gap-2 mt-4 text-[10px] text-[hsl(var(--muted-foreground))]">
+            <span>Less</span>
+            <div className="w-[12px] h-[12px] rounded-[2px] bg-[hsl(var(--muted)/0.4)]" />
+            <div className="w-[12px] h-[12px] rounded-[2px] bg-[hsl(var(--primary)/0.25)]" />
+            <div className="w-[12px] h-[12px] rounded-[2px] bg-[hsl(var(--primary)/0.5)]" />
+            <div className="w-[12px] h-[12px] rounded-[2px] bg-[hsl(var(--primary)/0.85)]" />
             <span>More</span>
           </div>
         </div>
 
-        <div className="overflow-x-auto pb-2">
-          <div className="inline-flex gap-0">
-            {/* Day labels column */}
-            <div className="flex flex-col gap-[3px] mr-2 pt-[22px]">
-              {dayLabels.map((label, i) => (
-                <div
-                  key={i}
-                  className="h-[13px] flex items-center text-[10px] text-[hsl(var(--muted-foreground))] leading-none"
-                >
-                  {label}
-                </div>
-              ))}
-            </div>
-
-            {/* Grid */}
-            <div className="relative">
-              {/* Month labels */}
-              <div className="flex h-[18px] mb-1">
-                {monthLabels.map((m, i) => (
-                  <div
-                    key={i}
-                    className="absolute text-[10px] text-[hsl(var(--muted-foreground))] leading-none"
-                    style={{ left: `${m.col * 16}px` }}
-                  >
-                    {m.label}
-                  </div>
-                ))}
-              </div>
-
-              {/* Cells */}
-              <div className="flex gap-[3px]">
-                {weeks.map((week, wi) => (
-                  <div key={wi} className="flex flex-col gap-[3px]">
-                    {/* Pad the first week if it doesn't start on Sunday */}
-                    {wi === 0 &&
-                      Array.from({ length: getDay(week[0].date) }).map((_, pi) => (
-                        <div key={`pad-${pi}`} className="w-[13px] h-[13px]" />
-                      ))}
-                    {week.map((day, di) => (
-                      <HeatmapCell key={di} day={day} />
-                    ))}
-                  </div>
-                ))}
-              </div>
-            </div>
+        {/* Hover tooltip */}
+        {hoverDay && (
+          <div
+            className="fixed z-50 pointer-events-none bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-lg px-3 py-2 shadow-xl text-xs"
+            style={{ left: hoverDay.x + 16, top: hoverDay.y - 40 }}
+          >
+            <div className="font-semibold text-[hsl(var(--foreground))]">{hoverDay.count} task{hoverDay.count !== 1 ? 's' : ''}</div>
+            <div className="text-[hsl(var(--muted-foreground))]">{hoverDay.display}</div>
           </div>
-        </div>
-
-        {/* Total summary */}
-        <div className="mt-4 pt-3 border-t border-[hsl(var(--border))]">
-          <p className="text-xs text-[hsl(var(--muted-foreground))]">
-            <span className="font-medium text-[hsl(var(--foreground))]">{completedTasks.length}</span>
-            {' '}total completions in the last year
-          </p>
-        </div>
+        )}
       </motion.div>
     </div>
   );
