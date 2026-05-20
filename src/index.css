@@ -27,25 +27,6 @@
     --sidebar-border: 0 0% 90%;
   }
   
-[data-theme-color="blue"] {
-    --primary: 217 91% 60%;
-  }
-  [data-theme-color="purple"] {
-    --primary: 270 70% 60%;
-  }
-  [data-theme-color="green"] {
-    --primary: 152 60% 45%;
-  }
-  [data-theme-color="red"] {
-    --primary: 0 84% 65%;
-  }
-  [data-theme-color="orange"] {
-    --primary: 24 95% 55%;
-  }
-  [data-theme-color="zinc"] {
-    --primary: 240 5% 65%;
-  }
-  
   .dark {
     --background: 0 0% 4%; /* #0a0a0a is HSL 0 0% 4% */
     --foreground: 0 0% 98%;
@@ -64,6 +45,25 @@
 
     --sidebar: 0 0% 6%;
     --sidebar-border: 0 0% 12%;
+  }
+
+  [data-theme-color="blue"] {
+    --primary: 217 91% 60%;
+  }
+  [data-theme-color="purple"] {
+    --primary: 270 70% 60%;
+  }
+  [data-theme-color="green"] {
+    --primary: 152 60% 45%;
+  }
+  [data-theme-color="red"] {
+    --primary: 0 84% 65%;
+  }
+  [data-theme-color="orange"] {
+    --primary: 24 95% 55%;
+  }
+  [data-theme-color="zinc"] {
+    --primary: 240 5% 65%;
   }
 }
 

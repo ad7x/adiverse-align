@@ -2,8 +2,14 @@ import React, { useState, useRef, useEffect } from 'react';
 import { db } from '../../db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { v4 as uuidv4 } from 'uuid';
-import { MoreHorizontal, Plus, GripVertical, CheckCircle2, Circle, CheckSquare, Square, Check, Minus, Bot, Trash2, ChevronRight, Info, Upload, Copy, ChevronDown, Calendar, Tag, AlignLeft, X } from 'lucide-react';
+import { MoreHorizontal, Plus, GripVertical, CheckCircle2, Circle, CheckSquare, Square, Check, Minus, Bot, Trash2, ChevronRight, Info, Upload, Copy, ChevronDown, Calendar, Tag, AlignLeft, X, MoreVertical } from 'lucide-react';
 import { motion, AnimatePresence, Reorder, useMotionValue, useSpring, useMotionTemplate } from 'framer-motion';
+import { PremiumCheckbox } from '../ui/PremiumCheckbox';
+import { RichEditor } from '../ui/RichEditor';
+import { SmartCloneModal, CloneOption } from './SmartCloneModal';
+import { YouTubeImportModal, YoutubeImportMode } from './YouTubeImportModal';
+import { exportSubjectZip, importSubjectZip } from '../../lib/zip';
+import { Youtube } from 'lucide-react';
 
 export function SubjectView({ subjectId }: { subjectId: string }) {
   const subject = useLiveQuery(() => db.subjects.get(subjectId), [subjectId]);
@@ -11,9 +17,18 @@ export function SubjectView({ subjectId }: { subjectId: string }) {
   const domains = useLiveQuery(() => db.domains.toArray());
   
   const rawTasks = useLiveQuery(() => db.tasks.where('subjectId').equals(subjectId).toArray(), [subjectId]);
+  const instances = useLiveQuery(() => db.subjectInstances.where('subjectId').equals(subjectId).sortBy('createdAt'), [subjectId]);
   const settings = useLiveQuery(() => db.settings.get('settings'));
   
+  const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
   const [tasks, setTasks] = useState<any[]>([]);
+
+  // When instances load, select the most recent one if none selected
+  useEffect(() => {
+    if (instances && instances.length > 0 && !selectedInstanceId) {
+      setSelectedInstanceId(instances[instances.length - 1].id);
+    }
+  }, [instances, selectedInstanceId]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   
@@ -84,9 +99,10 @@ REQUIREMENTS:
 
 - Group related topics into sections
 - Use subsections when useful
-- Keep task names concise but descriptive
+- Keep task names concise but descriptive (try to keep as close to real name for lecture or notes source)
 - completed must always be false
-- JSON must be syntactically valid`;
+- JSON must be syntactically valid
+- If the source is lecture, notes sequence keep the sequece flow as as per the source file `;
 
   const handleCopyPrompt = async () => {
     try {
@@ -100,8 +116,13 @@ REQUIREMENTS:
   };
 
   useEffect(() => {
-    if (rawTasks) setTasks([...rawTasks].sort((a, b) => a.order - b.order));
-  }, [rawTasks]);
+    if (rawTasks && selectedInstanceId) {
+      const filtered = rawTasks.filter(t => t.instanceId === selectedInstanceId);
+      setTasks([...filtered].sort((a, b) => a.order - b.order));
+    } else {
+      setTasks([]);
+    }
+  }, [rawTasks, selectedInstanceId]);
   
   // Close menu when clicked outside behavior can be added later if needed,
   // For now, toggle handles it.
@@ -152,6 +173,136 @@ REQUIREMENTS:
     return JSON.stringify(result, null, 2);
   };
 
+  const [isCloneModalOpen, setIsCloneModalOpen] = useState(false);
+  const [resetInstanceConfirm, setResetInstanceConfirm] = useState('');
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [isYoutubeModalOpen, setIsYoutubeModalOpen] = useState(false);
+
+  const handleYoutubeImport = async (playlist: any, mode: YoutubeImportMode) => {
+    let globalOrder = tasks.length;
+    
+    if (mode === 'new_section') {
+      const sectionId = uuidv4();
+      await db.tasks.add({
+        id: sectionId, subjectId, instanceId: selectedInstanceId, parentId: null, type: 'section',
+        title: playlist.title || 'YouTube Playlist', description: '', notes: '', completed: false, order: globalOrder++
+      });
+      
+      for (const video of playlist.videos) {
+        await db.tasks.add({
+          id: uuidv4(), subjectId, instanceId: selectedInstanceId, parentId: sectionId, type: 'task',
+          title: video.title, 
+          description: `<a href="${video.url}" target="_blank">Watch Video</a> (Duration: ${Math.round(video.duration / 60)} min)`, 
+          notes: '', completed: false, order: globalOrder++
+        });
+      }
+    } else {
+      // flat mode
+      for (const video of playlist.videos) {
+        await db.tasks.add({
+          id: uuidv4(), subjectId, instanceId: selectedInstanceId, parentId: null, type: 'task',
+          title: video.title, 
+          description: `<a href="${video.url}" target="_blank">Watch Video</a> (Duration: ${Math.round(video.duration / 60)} min)`, 
+          notes: '', completed: false, order: globalOrder++
+        });
+      }
+    }
+    
+    setIsYoutubeModalOpen(false);
+  };
+
+  const handleConfirmClone = async (name: string, option: CloneOption) => {
+    setIsCloneModalOpen(false);
+    const newInstanceId = uuidv4();
+    await db.subjectInstances.add({
+      id: newInstanceId,
+      subjectId,
+      name: name,
+      createdAt: new Date().toISOString(),
+      order: instances ? instances.length : 0
+    });
+
+    if (option !== 'empty_fresh' && selectedInstanceId) {
+      const currentTasks = await db.tasks.where('subjectId').equals(subjectId).toArray();
+      const currentInstanceTasks = currentTasks.filter(t => t.instanceId === selectedInstanceId);
+      
+      const idMap = new Map<string, string>();
+      for (const t of currentInstanceTasks) {
+        idMap.set(t.id, uuidv4());
+      }
+      
+      for (const t of currentInstanceTasks) {
+        const clonedTask = {
+          ...t,
+          id: idMap.get(t.id)!,
+          instanceId: newInstanceId,
+          parentId: t.parentId ? idMap.get(t.parentId) || null : null,
+          completed: option.includes('completion') ? false : t.completed,
+          completedAt: option.includes('completion') ? null : t.completedAt,
+          notes: option.includes('notes') ? '' : t.notes,
+          description: option.includes('descriptions') ? '' : t.description,
+          tags: option === 'completion_notes_descriptions_tags' ? [] : t.tags
+        };
+        await db.tasks.add(clonedTask);
+      }
+    }
+    
+    setSelectedInstanceId(newInstanceId);
+  };
+
+  const handleResetInstance = async () => {
+    if (resetInstanceConfirm === 'I agree to reset this instance') {
+       if (selectedInstanceId) {
+         const tasksToUpdate = await db.tasks.where('instanceId').equals(selectedInstanceId).toArray();
+         for(const t of tasksToUpdate) {
+            t.completed = false;
+            t.completedAt = null;
+            if(t.completionCount) t.completionCount = 0;
+         }
+         await db.tasks.bulkPut(tasksToUpdate);
+       }
+       setShowResetModal(false);
+       setResetInstanceConfirm('');
+       setMenuOpen(false);
+    }
+  };
+
+  const handleRenameInstance = async () => {
+    if (!selectedInstanceId) return;
+    const currentInstance = instances?.find(i => i.id === selectedInstanceId);
+    if (!currentInstance) return;
+    
+    const name = prompt("Rename instance:", currentInstance.name);
+    if (!name || !name.trim()) return;
+    
+    await db.subjectInstances.update(selectedInstanceId, { name: name.trim() });
+    setMenuOpen(false);
+  };
+
+  const handleDeleteInstance = async () => {
+    if (!selectedInstanceId) return;
+    const currentInstance = instances?.find(i => i.id === selectedInstanceId);
+    if (!currentInstance) return;
+
+    if (instances && instances.length > 1) {
+      if (confirm(`Delete instance '${currentInstance.name}'? This will delete all tasks and progress for this revision.`)) {
+        await db.subjectInstances.delete(selectedInstanceId);
+        const tasksToDelete = await db.tasks.where('subjectId').equals(subjectId).toArray();
+        const instanceTasks = tasksToDelete.filter(t => t.instanceId === selectedInstanceId);
+        for (const t of instanceTasks) {
+          await db.tasks.delete(t.id);
+        }
+        // Selection will auto-fallback due to useEffect
+        setSelectedInstanceId(null); 
+        setMenuOpen(false);
+      }
+    } else {
+      if (confirm("This is the only instance. Deleting it will delete the entire subject. Proceed?")) {
+        await db.subjects.delete(subjectId);
+      }
+    }
+  };
+
   const handleCopyJSON = async () => {
     try {
       await navigator.clipboard.writeText(getSubjectJSON());
@@ -174,6 +325,22 @@ REQUIREMENTS:
     setMenuOpen(false);
   };
 
+  const handleDownloadZIP = async () => {
+    try {
+      const blob = await exportSubjectZip(subjectId, selectedInstanceId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${subject?.title.toLowerCase().replace(/ /g, '-') || 'subject'}-export.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to export ZIP');
+    }
+    setMenuOpen(false);
+  };
+
   const processImport = async (jsonStr: string) => {
     try {
       const data = JSON.parse(jsonStr);
@@ -182,14 +349,14 @@ REQUIREMENTS:
       const importSection = async (sec: any, parentId: string | null = null) => {
         const sectionId = uuidv4();
         await db.tasks.add({
-          id: sectionId, subjectId, parentId, type: 'section',
+          id: sectionId, subjectId, instanceId: selectedInstanceId, parentId, type: 'section',
           title: sec.title || 'Untitled Section', description: sec.description || '', notes: '', completed: false, order: globalOrder++
         });
         
         const children = sec.tasks || sec.children || [];
         for (const ct of children) {
           await db.tasks.add({
-            id: uuidv4(), subjectId, parentId: sectionId, type: 'task',
+            id: uuidv4(), subjectId, instanceId: selectedInstanceId, parentId: sectionId, type: 'task',
             title: ct.title || 'Untitled Task', description: ct.description || '', notes: '', completed: ct.completed || false, order: globalOrder++
           });
         }
@@ -212,7 +379,7 @@ REQUIREMENTS:
              await importSection(pt, null);
            } else {
              await db.tasks.add({
-                id: uuidv4(), subjectId, parentId: null, type: 'task',
+                id: uuidv4(), subjectId, instanceId: selectedInstanceId, parentId: null, type: 'task',
                 title: pt.title || 'Untitled Task', description: pt.description || '', notes: '', completed: pt.completed || false, order: globalOrder++
              });
            }
@@ -226,12 +393,27 @@ REQUIREMENTS:
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => processImport(event.target?.result as string);
-    reader.readAsText(file);
+    
+    if (file.name.endsWith('.zip')) {
+      try {
+        const data = await importSubjectZip(file);
+        // data.tasks contains the tasks to merge or replace
+        // Note: Real full replace logic would go here. For now, just process data.tasks or data.subject
+        if (data.tasks) {
+           processImport(JSON.stringify({ tasks: data.tasks }));
+        }
+      } catch (err) {
+        alert("Failed to parse ZIP.");
+      }
+    } else {
+      const reader = new FileReader();
+      reader.onload = (event) => processImport(event.target?.result as string);
+      reader.readAsText(file);
+    }
+    
     if(fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -262,7 +444,7 @@ REQUIREMENTS:
         <div className="max-w-5xl mx-auto flex flex-col min-h-full">
         
           <div className="bg-[hsl(var(--foreground)/0.02)] backdrop-blur-3xl border border-[hsl(var(--border))] rounded-[32px] p-8 md:p-10 relative overflow-hidden shadow-sm transition-all mb-10 group">
-            <div className="flex items-center justify-between mb-8 z-10 relative">
+            <div className="flex items-center justify-between mb-8 z-30 relative">
               <div className="text-[11px] font-bold text-[hsl(var(--muted-foreground))] uppercase tracking-[0.15em] opacity-80">
                 {category?.title} / {domain?.title} / <span className="text-[hsl(var(--foreground))]">{subject.title}</span>
               </div>
@@ -279,7 +461,7 @@ REQUIREMENTS:
                   {menuOpen && (
                     <motion.div 
                       initial={{ opacity: 0, scale: 0.95, y: -10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: -10 }}
-                      className="absolute right-0 top-12 w-56 bg-[hsl(var(--card))] border border-[hsl(var(--border))] shadow-xl rounded-xl custom-glass z-20 flex flex-col p-1.5"
+                      className="absolute right-0 top-12 w-56 bg-[hsl(var(--card))] border border-[hsl(var(--border))] shadow-2xl rounded-xl z-50 flex flex-col p-1.5 backdrop-blur-md"
                     >
                       {!showExportMenu ? (
                         <>
@@ -293,15 +475,37 @@ REQUIREMENTS:
                           <button disabled={isGlobalLocked} onClick={toggleSubjectLock} className="w-full text-left p-2.5 text-[13px] font-medium rounded-lg hover:bg-[hsl(var(--muted))] transition-colors disabled:opacity-50">
                             {isSubjectLocked ? "Unlock View" : "Lock View"}
                           </button>
-                          <button disabled={isLockedForEdit} onClick={async () => {
-                            if(!confirm("Reset all progress for this subject?")) return;
-                            const tasksToUpdate = await db.tasks.where({ subjectId }).toArray();
-                            for(const t of tasksToUpdate) await db.tasks.update(t.id, { completed: false });
-                            setMenuOpen(false);
-                          }} className="w-full text-left p-2.5 text-[13px] font-medium rounded-lg hover:bg-[hsl(var(--muted))] transition-colors disabled:opacity-50">Reset Progress</button>
-                          <button disabled={isLockedForEdit} onClick={async () => {
-                            if(confirm("Delete this subject permanently?")) await db.subjects.delete(subjectId);
-                          }} className="w-full text-left p-2.5 text-[13px] font-medium rounded-lg hover:bg-red-500/10 text-red-500 transition-colors disabled:opacity-50">Delete Subject</button>
+                          
+                          <div className="h-[1px] w-full bg-[hsl(var(--border))] my-1"></div>
+                          <div className="text-[10px] font-bold uppercase tracking-widest text-[hsl(var(--muted-foreground))] px-2 py-1">Instances</div>
+                          
+                          <button disabled={isLockedForEdit} onClick={() => { setIsCloneModalOpen(true); setMenuOpen(false); }} className="w-full flex items-center gap-2 text-left p-2 text-[13px] font-medium rounded-lg hover:bg-[hsl(var(--muted))] transition-colors disabled:opacity-50">
+                            <Plus size={14} /> Create New Instance
+                          </button>
+                          
+                          {instances && instances.length > 0 && (
+                            <div className="px-1 py-1">
+                              <select 
+                                value={selectedInstanceId || ''} 
+                                onChange={e => { setSelectedInstanceId(e.target.value); setMenuOpen(false); }}
+                                className="w-full p-2 text-[13px] font-medium rounded-md bg-[hsl(var(--muted)/0.5)] border border-[hsl(var(--border))] outline-none cursor-pointer"
+                              >
+                                {instances.map(i => (
+                                   <option key={i.id} value={i.id}>{i.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                          
+                          <button disabled={isLockedForEdit} onClick={handleRenameInstance} className="w-full text-left p-2 text-[13px] font-medium rounded-lg hover:bg-[hsl(var(--muted))] transition-colors disabled:opacity-50">Rename Instance</button>
+                          
+                          <button disabled={isLockedForEdit} onClick={() => setShowResetModal(true)} className="w-full text-left p-2 text-[13px] font-medium rounded-lg hover:bg-orange-500/10 text-orange-500 transition-colors disabled:opacity-50 flex items-center gap-2">
+                             <CheckSquare size={14} /> Reset Complete Checklist
+                          </button>
+
+                          <button disabled={isLockedForEdit} onClick={handleDeleteInstance} className="w-full text-left p-2 text-[13px] font-medium rounded-lg hover:bg-red-500/10 text-red-500 transition-colors disabled:opacity-50 flex items-center gap-2">
+                             <Trash2 size={14} /> Delete Instance
+                          </button>
                         </>
                       ) : (
                         <>
@@ -310,6 +514,7 @@ REQUIREMENTS:
                           </button>
                           <button onClick={handleCopyJSON} className="w-full text-left p-2.5 text-[13px] font-medium rounded-lg hover:bg-[hsl(var(--muted))] transition-colors">Copy JSON to Clipboard</button>
                           <button onClick={handleDownloadJSON} className="w-full text-left p-2.5 text-[13px] font-medium rounded-lg hover:bg-[hsl(var(--muted))] transition-colors">Download JSON File</button>
+                          <button onClick={handleDownloadZIP} className="w-full text-left p-2.5 text-[13px] font-medium rounded-lg hover:bg-[hsl(var(--primary)/0.1)] text-[hsl(var(--primary))] transition-colors">Download ZIP (with media)</button>
                         </>
                       )}
                     </motion.div>
@@ -317,6 +522,48 @@ REQUIREMENTS:
                 </AnimatePresence>
               </div>
             </div>
+
+            <SmartCloneModal 
+              isOpen={isCloneModalOpen} 
+              onClose={() => setIsCloneModalOpen(false)} 
+              onConfirm={handleConfirmClone} 
+            />
+
+            <AnimatePresence>
+              {showResetModal && (
+                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+                   <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="w-full max-w-md bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-2xl shadow-xl overflow-hidden flex flex-col p-6">
+                      <h2 className="text-xl font-semibold mb-2 text-orange-500">Reset Complete Checklist</h2>
+                      <p className="text-sm text-[hsl(var(--muted-foreground))] mb-6">This will reset all task completion progress for the current instance only. Type <strong>I agree to reset this instance</strong> below to confirm.</p>
+                      
+                      <input 
+                        value={resetInstanceConfirm} 
+                        onChange={e => setResetInstanceConfirm(e.target.value)} 
+                        placeholder="I agree to reset this instance"
+                        className="w-full bg-[hsl(var(--background))] border border-[hsl(var(--border))] rounded-xl p-3 text-sm focus:border-orange-500 outline-none mb-6"
+                        autoFocus
+                      />
+
+                      <div className="flex gap-3 justify-end">
+                        <button onClick={() => { setShowResetModal(false); setResetInstanceConfirm(''); }} className="px-4 py-2 rounded-xl hover:bg-[hsl(var(--muted))] text-sm font-medium transition-colors">Cancel</button>
+                        <button 
+                          onClick={handleResetInstance} 
+                          disabled={resetInstanceConfirm !== 'I agree to reset this instance'}
+                          className="px-5 py-2 rounded-xl bg-orange-500 text-white text-sm font-medium transition-colors disabled:opacity-50"
+                        >
+                          Confirm Reset
+                        </button>
+                      </div>
+                   </motion.div>
+                 </motion.div>
+              )}
+            </AnimatePresence>
+
+            <YouTubeImportModal 
+              isOpen={isYoutubeModalOpen}
+              onClose={() => setIsYoutubeModalOpen(false)}
+              onImport={handleYoutubeImport}
+            />
 
             <div className="mb-12 z-10 relative">
               <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-[hsl(var(--foreground))]">{subject.title}</h1>
@@ -332,10 +579,15 @@ REQUIREMENTS:
                 </div>
                 <div className="flex flex-col">
                   <span className="font-semibold text-lg text-[hsl(var(--foreground))] mb-0.5">Overall Progress</span>
-                  <span className="text-sm font-medium text-[hsl(var(--muted-foreground))]">{completed} / {total} tasks completed</span>
+                  <span className="text-sm font-medium text-[hsl(var(--muted-foreground))] mb-1">{completed} / {total} tasks completed</span>
+                  {instances && instances.length > 1 && (
+                     <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[hsl(var(--muted)/0.5)] border border-[hsl(var(--border))]">
+                       <span className="text-[11px] font-semibold tracking-wider uppercase text-[hsl(var(--primary))]">{instances.find(i => i.id === selectedInstanceId)?.name}</span>
+                       <ChevronDown size={12} className="text-[hsl(var(--muted-foreground))]" />
+                     </div>
+                  )}
                 </div>
               </div>
-              
               <div className="text-5xl lg:text-7xl font-black tracking-tighter text-[hsl(var(--primary))]/20 leading-none">
                  {progress}%
               </div>
@@ -396,9 +648,9 @@ REQUIREMENTS:
                        <>
                          <div className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-[hsl(var(--border))] rounded-xl hover:border-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/0.05)] transition-colors cursor-pointer" onClick={() => fileInputRef.current?.click()}>
                            <Upload size={32} className="text-[hsl(var(--muted-foreground))] mb-4" />
-                           <span className="text-sm text-[hsl(var(--muted-foreground))] font-medium">Click to select .json file</span>
+                           <span className="text-sm text-[hsl(var(--muted-foreground))] font-medium">Click to select .json or .zip file</span>
                          </div>
-                         <input type="file" accept=".json" ref={fileInputRef} className="hidden" onChange={handleFileUpload} />
+                         <input type="file" accept=".json,.zip" ref={fileInputRef} className="hidden" onChange={handleFileUpload} />
                        </>
                      )}
                      
@@ -427,12 +679,15 @@ REQUIREMENTS:
         </Reorder.Group>
 
         {!isLockedForEdit && (
-          <div className="mt-8 flex items-center gap-4">
-            <button onClick={() => db.tasks.add({ id: uuidv4(), subjectId, parentId: null, type: 'task', title: '', description: '', notes: '', completed: false, order: tasks.length })} className="flex items-center gap-2 text-[13px] font-medium text-[hsl(var(--muted-foreground))] hover:text-white px-4 py-2 bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-full shadow-sm hover:shadow-md transition-all">
+          <div className="mt-8 flex items-center gap-4 flex-wrap">
+            <button onClick={() => db.tasks.add({ id: uuidv4(), subjectId, instanceId: selectedInstanceId, parentId: null, type: 'task', title: '', description: '', notes: '', completed: false, order: tasks.length })} className="flex items-center gap-2 text-[13px] font-medium text-[hsl(var(--muted-foreground))] hover:text-white px-4 py-2 bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-full shadow-sm hover:shadow-md transition-all">
               <Plus size={16} /> Add Task
             </button>
-            <button onClick={() => db.tasks.add({ id: uuidv4(), subjectId, parentId: null, type: 'section', title: '', description: '', notes: '', completed: false, order: tasks.length })} className="flex items-center gap-2 text-[13px] font-medium text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] px-4 py-2 border border-transparent hover:border-[hsl(var(--primary)/0.3)] rounded-full transition-all">
+            <button onClick={() => db.tasks.add({ id: uuidv4(), subjectId, instanceId: selectedInstanceId, parentId: null, type: 'section', title: '', description: '', notes: '', completed: false, order: tasks.length })} className="flex items-center gap-2 text-[13px] font-medium text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] px-4 py-2 border border-transparent hover:border-[hsl(var(--primary)/0.3)] rounded-full transition-all">
               <Plus size={16} /> Add Section
+            </button>
+            <button onClick={() => setIsYoutubeModalOpen(true)} className="flex items-center gap-2 text-[13px] font-medium text-red-500/80 hover:text-red-500 px-4 py-2 border border-transparent hover:border-red-500/30 hover:bg-red-500/10 rounded-full transition-all ml-auto">
+              <Youtube size={16} /> Import YouTube Playlist
             </button>
           </div>
         )}
@@ -522,11 +777,11 @@ function SectionNode({ section, allTasks, isLockedForEdit, level = 0, settings }
               {!isLockedForEdit && (
                 <div className="flex items-center gap-2 mt-1">
                   {level === 0 && (
-                    <button onClick={() => db.tasks.add({ id: uuidv4(), subjectId: section.subjectId, parentId: section.id, type: 'section', title: '', description: '', notes: '', completed: false, order: children.length })} className="text-[hsl(var(--muted-foreground))] text-sm py-2 px-3 hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))] rounded-lg text-left flex items-center gap-2 transition-colors w-max">
+                    <button onClick={() => db.tasks.add({ id: uuidv4(), subjectId: section.subjectId, instanceId: section.instanceId, parentId: section.id, type: 'section', title: '', description: '', notes: '', completed: false, order: children.length })} className="text-[hsl(var(--muted-foreground))] text-sm py-2 px-3 hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))] rounded-lg text-left flex items-center gap-2 transition-colors w-max">
                       <Plus size={14} /> Add subsection
                     </button>
                   )}
-                  <button onClick={() => db.tasks.add({ id: uuidv4(), subjectId: section.subjectId, parentId: section.id, type: 'task', title: '', description: '', notes: '', completed: false, tags: [], order: children.length })} className="text-[hsl(var(--muted-foreground))] text-sm py-2 px-3 hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))] rounded-lg text-left flex items-center gap-2 transition-colors w-max">
+                  <button onClick={() => db.tasks.add({ id: uuidv4(), subjectId: section.subjectId, instanceId: section.instanceId, parentId: section.id, type: 'task', title: '', description: '', notes: '', completed: false, tags: [], order: children.length })} className="text-[hsl(var(--muted-foreground))] text-sm py-2 px-3 hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))] rounded-lg text-left flex items-center gap-2 transition-colors w-max">
                     <Plus size={14} /> Add task
                   </button>
                 </div>
@@ -578,37 +833,22 @@ function TaskNode({ task, isLockedForEdit, settings }: any) {
     });
   };
 
-  const checkmarkStyle = settings?.checkmarkStyle || 'circle';
-
-  let CheckIcon = Circle;
-  let CheckedIcon = CheckCircle2;
-
-  if (checkmarkStyle === 'rounded-square') {
-    CheckIcon = Square;
-    CheckedIcon = CheckSquare;
-  } else if (checkmarkStyle === 'square') {
-    CheckIcon = () => <div className="w-[18px] h-[18px] border-[1.5px] border-current" />;
-    CheckedIcon = () => (
-      <div className="w-[18px] h-[18px] border-[1.5px] border-current bg-current flex items-center justify-center relative">
-        <Check size={12} className="text-[hsl(var(--background))] absolute" strokeWidth={3} />
-      </div>
-    );
-  } else if (checkmarkStyle === 'minimalist') {
-    CheckIcon = () => <div className="w-[18px] h-[18px] border-b-2 border-[hsl(var(--muted-foreground)/0.3)] transition-colors hover:border-current" />;
-    CheckedIcon = () => <Check size={18} strokeWidth={2.5} className="text-[hsl(var(--primary))]" />;
-  }
+  const checkmarkStyle = settings?.checkmarkStyle || 'modern';
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
     <Reorder.Item value={task} dragListener={!isLockedForEdit} className={`flex flex-col rounded-xl mb-2 border ${isExpanded ? 'border-[hsl(var(--border))] bg-[hsl(var(--card))]' : 'border-transparent hover:border-[hsl(var(--border))] hover:bg-[hsl(var(--muted)/0.3)]'} transition-colors ${completed ? 'opacity-70' : ''}`}>
-      <div className="flex items-start gap-3 p-3 group">
-        {!isLockedForEdit && <div className="mt-1.5 cursor-grab text-[hsl(var(--muted-foreground))] opacity-0 group-hover:opacity-100"><GripVertical size={14}/></div>}
+      <div className="flex items-start gap-3 p-3 group relative">
+        {!isLockedForEdit && <div className="mt-1.5 cursor-grab text-[hsl(var(--muted-foreground))] opacity-0 group-hover:opacity-100 hidden md:block"><GripVertical size={14}/></div>}
         
-        <button onClick={toggleCompleted} className="mt-1.5 shrink-0 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] transition-colors flex items-center justify-center w-[18px] h-[18px]">
-          {completed ? 
-            (checkmarkStyle === 'square' || checkmarkStyle === 'minimalist' ? <CheckedIcon /> : <CheckedIcon size={18} className="text-[hsl(var(--primary))]" />) : 
-            (checkmarkStyle === 'square' || checkmarkStyle === 'minimalist' ? <CheckIcon /> : <CheckIcon size={18} />)
-          }
-        </button>
+        <div className="mt-1 shrink-0">
+          <PremiumCheckbox 
+            checked={completed} 
+            onChange={toggleCompleted} 
+            styleVariant={checkmarkStyle}
+            disabled={isLockedForEdit && false} // Wait, lock should allow checking!
+          />
+        </div>
 
         <div className="flex-1 flex flex-col pt-1">
           <input 
@@ -621,22 +861,32 @@ function TaskNode({ task, isLockedForEdit, settings }: any) {
           />
           {/* Quick info row if not expanded */}
           {!isExpanded && (tags.length > 0 || completed) && (
-            <div className="flex flex-wrap items-center gap-2 mt-1">
+            <div className="flex flex-wrap items-center gap-2 mt-2">
               {tags.map((tag: string, idx: number) => (
                 <span key={idx} className="text-[10px] px-1.5 py-0.5 rounded-md bg-[hsl(var(--primary)/0.1)] border border-[hsl(var(--primary)/0.2)] text-[hsl(var(--primary))] font-medium uppercase tracking-wider">{tag}</span>
               ))}
-              {completed && task.finishedAt && (
-                <span className="text-[10px] flex items-center gap-1 text-[hsl(var(--muted-foreground))]"><Calendar size={10} /> {formatDate(task.finishedAt)}</span>
+              {completed && task.completedAt && (
+                <span className="text-[10px] flex items-center gap-1 text-[hsl(var(--muted-foreground))]"><Calendar size={10} /> {formatDate(task.completedAt)}</span>
               )}
             </div>
           )}
         </div>
 
-        <div className="flex items-center gap-2 mt-1 shrink-0">
-          {!isLockedForEdit && <button onClick={() => db.tasks.delete(task.id)} className="text-[hsl(var(--muted-foreground))] hover:text-red-500 opacity-0 group-hover:opacity-100 p-1"><Trash2 size={14}/></button>}
-          <button onClick={() => setIsExpanded(!isExpanded)} className={`p-1 rounded-md transition-colors ${isExpanded || description || tags.length > 0 ? 'text-[hsl(var(--foreground))]' : 'text-[hsl(var(--muted-foreground))] opacity-0 group-hover:opacity-100'}`}>
-             {isExpanded ? <ChevronDown size={16} /> : <AlignLeft size={16} />}
+        <div className="flex items-center gap-2 mt-1 shrink-0 relative">
+          <button 
+            className="p-1 rounded-md transition-colors text-[hsl(var(--muted-foreground))] md:hidden"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          >
+            <MoreVertical size={16} />
           </button>
+
+          <div className={`items-center gap-2 ${mobileMenuOpen ? 'flex absolute right-8 bg-[hsl(var(--card))] border border-[hsl(var(--border))] shadow-lg p-1 rounded-lg z-20' : 'hidden md:flex'}`}>
+            {!isLockedForEdit && <button onClick={() => db.tasks.delete(task.id)} className="text-[hsl(var(--muted-foreground))] hover:text-red-500 opacity-0 group-hover:opacity-100 p-1 md:opacity-0 md:group-hover:opacity-100 flex items-center gap-1"><Trash2 size={14}/><span className="text-xs md:hidden">Delete</span></button>}
+            <button onClick={() => setIsExpanded(!isExpanded)} className={`p-1 rounded-md transition-colors ${isExpanded || description || tags.length > 0 ? 'text-[hsl(var(--foreground))]' : 'text-[hsl(var(--muted-foreground))] opacity-0 group-hover:opacity-100'} md:opacity-0 md:group-hover:opacity-100 flex items-center gap-1`}>
+               {isExpanded ? <ChevronDown size={16} /> : <AlignLeft size={16} />}
+               <span className="text-xs md:hidden">Details</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -648,14 +898,16 @@ function TaskNode({ task, isLockedForEdit, settings }: any) {
               {/* Description */}
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] flex items-center gap-1.5"><AlignLeft size={14} /> Description</label>
-                <textarea 
-                  value={description}
-                  onChange={e => setDescription(e.target.value)}
-                  onBlur={() => db.tasks.update(task.id, { description })}
-                  readOnly={isLockedForEdit}
-                  placeholder="Add details about this task..."
-                  className="w-full min-h-[60px] bg-[hsl(var(--background))] border border-[hsl(var(--border))] rounded-lg p-2.5 text-sm resize-y outline-none focus:border-[hsl(var(--primary))] text-[hsl(var(--foreground))]"
-                />
+                <div className="mt-1">
+                  <RichEditor 
+                    initialContent={description} 
+                    onSave={(jsonContent) => {
+                      setDescription(jsonContent);
+                      db.tasks.update(task.id, { description: jsonContent });
+                    }} 
+                    readOnly={isLockedForEdit} 
+                  />
+                </div>
               </div>
 
               {/* Tags */}

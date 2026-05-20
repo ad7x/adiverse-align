@@ -3,6 +3,9 @@ import { motion } from 'framer-motion';
 import { useUIStore } from '../../store';
 import { db } from '../../db';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { OrganicTree } from './OrganicTree';
+import { InsightsDashboard } from './InsightsDashboard';
+import { Search } from 'lucide-react';
 
 export function HomeView() {
   const { setActiveView } = useUIStore();
@@ -26,29 +29,36 @@ export function HomeView() {
   };
 
   return (
-    <div className="h-full w-full flex flex-col items-center p-8 bg-[hsl(var(--background))] pt-[25vh]">
-      <motion.div 
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, ease: "easeOut" }}
-        className="max-w-2xl w-full flex flex-col items-center gap-10"
-      >
-        <div className="text-center space-y-3">
-          <h1 className="text-4xl md:text-[44px] font-medium tracking-tight text-[hsl(var(--foreground))]">
-            {userName ? `${getGreeting()}, ${userName}` : 'Where should we start?'}
-          </h1>
-        </div>
+    <div className="h-full w-full bg-[hsl(var(--background))] overflow-y-auto custom-scrollbar relative scroll-smooth">
+      
+      {/* Viewport 1: Fullscreen Execution Tree Hero */}
+      <section className="w-full h-screen sticky top-0">
+        <OrganicTree />
+      </section>
 
-        <form onSubmit={handleSearchSubmit} className="w-full relative group">
-          <input
-            type="text"
-            value={searchValue}
-            onChange={e => setSearchValue(e.target.value)}
-            placeholder="Search anything..."
-            className="w-full bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-2xl px-6 py-4 md:py-5 text-lg md:text-xl text-[hsl(var(--foreground))] outline-none shadow-sm transition-all focus:shadow-md focus:border-[hsl(var(--primary)/0.5)] placeholder:text-[hsl(var(--muted-foreground))] custom-glass"
-          />
-        </form>
-      </motion.div>
+      {/* Viewport 2: Content (Search & Insights) */}
+      <section className="relative z-10 w-full min-h-screen bg-[hsl(var(--background))] border-t border-[hsl(var(--border))]">
+        <div className="max-w-6xl w-full mx-auto p-6 md:p-12 flex flex-col gap-10 mt-10">
+          
+          {/* Premium Global Search */}
+          <form onSubmit={handleSearchSubmit} className="w-full relative group">
+            <div className="absolute inset-y-0 left-6 flex items-center pointer-events-none text-[hsl(var(--muted-foreground))] group-focus-within:text-[hsl(var(--primary))] transition-colors">
+              <Search size={22} />
+            </div>
+            <input
+              type="text"
+              value={searchValue}
+              onChange={e => setSearchValue(e.target.value)}
+              placeholder="Search categories, subjects, tasks, tags..."
+              className="w-full bg-[hsl(var(--card))] border-2 border-[hsl(var(--border))] rounded-2xl pl-16 pr-6 py-5 text-xl text-[hsl(var(--foreground))] outline-none shadow-sm transition-all focus:shadow-xl focus:border-[hsl(var(--primary)/0.6)] placeholder:text-[hsl(var(--muted-foreground))]"
+            />
+          </form>
+
+          {/* Insights Dashboard */}
+          <InsightsDashboard />
+
+        </div>
+      </section>
     </div>
   );
 }

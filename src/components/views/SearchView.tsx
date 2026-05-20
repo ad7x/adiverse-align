@@ -40,14 +40,18 @@ export function SearchView() {
 
   const handleSelect = (item: any) => {
     let targetSubjectId = null;
+    let highlightId = null;
     
-    if (item.docType === 'Subject') targetSubjectId = item.id;
+    if (item.docType === 'Subject') {
+      targetSubjectId = item.id;
+    }
     else if (item.docType === 'Task' || item.docType === 'Section') {
       targetSubjectId = item.subjectId;
+      highlightId = item.id;
     }
 
     if (targetSubjectId) {
-      setActiveView({ type: 'subject', subjectId: targetSubjectId });
+      setActiveView({ type: 'subject', subjectId: targetSubjectId, highlightId });
     }
   };
 

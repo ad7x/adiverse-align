@@ -14,12 +14,32 @@ export default function App() {
   const settings = useLiveQuery(() => db.settings.get('settings'));
 
   useEffect(() => {
-    if (settings?.theme) {
-      if (settings.theme === 'dark') {
-        document.documentElement.classList.add('dark');
-      } else {
-        document.documentElement.classList.remove('dark');
+    const initSettings = async () => {
+      try {
+        const existing = await db.settings.get('settings');
+        if (!existing) {
+          await db.settings.add({
+            id: 'settings',
+            theme: 'dark',
+            userName: '',
+            hasCompletedOnboarding: false,
+            globalLock: false,
+            exportHistory: []
+          });
+        }
+      } catch (error) {
+        console.error('Failed to initialize settings:', error);
       }
+    };
+    initSettings();
+  }, []);
+
+  useEffect(() => {
+    const activeTheme = settings?.theme || 'dark';
+    if (activeTheme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
     }
     if (settings?.themeColor) {
       document.documentElement.dataset.themeColor = settings.themeColor;
@@ -48,7 +68,7 @@ export default function App() {
           {activeView.type === 'home' && <HomeView />}
           {activeView.type === 'settings' && <SettingsView />}
           {activeView.type === 'search' && <SearchView />}
-          {activeView.type === 'subject' && <SubjectView subjectId={activeView.subjectId} />}
+          {activeView.type === 'subject' && <SubjectView subjectId={activeView.subjectId} highlightId={activeView.highlightId} />}
         </div>
       </AppLayout>
     </>
