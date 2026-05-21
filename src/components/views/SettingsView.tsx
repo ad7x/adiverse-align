@@ -60,7 +60,7 @@ export function SettingsView() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `adiverse-workspace-${new Date().toISOString().split('T')[0]}.zip`;
+      a.download = `align-workspace-${new Date().toISOString().split('T')[0]}.zip`;
       a.click();
       URL.revokeObjectURL(url);
       

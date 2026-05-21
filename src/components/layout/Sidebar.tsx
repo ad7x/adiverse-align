@@ -190,11 +190,11 @@ export function Sidebar() {
       <div className={cn("flex items-center p-4 min-h-[64px] shrink-0", sidebarCollapsed ? "justify-center" : "justify-between")}>
         {sidebarCollapsed ? (
           <button onClick={() => setSidebarCollapsed(false)} className="hover:opacity-80 p-0.5 rounded-lg">
-            <img src="https://www.gstatic.com/lamda/images/gemini_sparkle_aurora_33f86dc0c0257da337c63.svg" alt="App" className="w-[22px] h-[22px]" />
+            <img src="https://res.cloudinary.com/druczdy9a/image/upload/f_png/q_auto:low/f_png/q_auto:low/c_auto,h_208,w_200/icon_xhoe7c.png" alt="App Logo" className="w-[22px] h-[22px] object-contain rounded-md" />
           </button>
         ) : (
           <>
-            <img src="https://www.gstatic.com/lamda/images/gemini_sparkle_aurora_33f86dc0c0257da337c63.svg" alt="App" className="w-[22px] h-[22px] ml-1" />
+            <img src="https://res.cloudinary.com/druczdy9a/image/upload/f_png/q_auto:low/f_png/q_auto:low/c_auto,h_208,w_200/icon_xhoe7c.png" alt="App Logo" className="w-[22px] h-[22px] ml-1 object-contain rounded-md" />
             <button onClick={() => setSidebarCollapsed(true)} className="text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] p-1 rounded-md">
               <PanelLeftClose size={18} />
             </button>

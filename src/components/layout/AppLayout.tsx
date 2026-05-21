@@ -35,9 +35,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             aria-label="Open Sidebar"
           >
             <img 
-              src="https://www.gstatic.com/lamda/images/gemini_sparkle_aurora_33f86dc0c0257da337c63.svg" 
-              alt="App" 
-              className="w-5 h-5 animate-pulse" 
+              src="https://res.cloudinary.com/druczdy9a/image/upload/f_png/q_auto:low/f_png/q_auto:low/c_auto,h_208,w_200/icon_xhoe7c.png" 
+              alt="App Logo" 
+              className="w-5 h-5 object-contain rounded-md animate-pulse" 
             />
           </button>
         )}

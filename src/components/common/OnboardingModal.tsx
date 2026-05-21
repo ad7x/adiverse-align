@@ -30,7 +30,7 @@ export function OnboardingModal() {
           className="max-w-md w-full bg-[hsl(var(--card))] border border-[hsl(var(--border))] p-8 rounded-[32px] shadow-2xl"
         >
           <div className="flex justify-center mb-8">
-            <img src="https://www.gstatic.com/lamda/images/gemini_sparkle_aurora_33f86dc0c0257da337c63.svg" className="w-12 h-12" alt="Aurora Logo" />
+            <img src="https://res.cloudinary.com/druczdy9a/image/upload/f_png/q_auto:low/f_png/q_auto:low/c_auto,h_208,w_200/icon_xhoe7c.png" className="w-12 h-12 object-contain rounded-2xl" alt="Align OS Logo" />
           </div>
           <h1 className="text-3xl font-semibold text-center text-[hsl(var(--foreground))] mb-8 tracking-tight">What should we call you?</h1>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">

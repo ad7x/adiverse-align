@@ -96,9 +96,8 @@ export function SubjectView({ subjectId, highlightId }: { subjectId: string; hig
   }, [menuOpen]);
 
   // Computed values
-  const isGlobalLocked = settings?.globalLock || false;
-  const isSubjectLocked = subject?.isLocked || false;
-  const isLockedForEdit = isGlobalLocked || isSubjectLocked;
+  const subjectViewLock = subject?.isLocked || false;
+  const isStructureLocked = subjectViewLock;
 
   const toggleSubjectLock = async () => {
     if (subject) await db.subjects.update(subjectId, { isLocked: !subject.isLocked });
@@ -385,15 +384,15 @@ export function SubjectView({ subjectId, highlightId }: { subjectId: string; hig
                       {!showExportMenu && !showImportMenu ? (
                         <>
                           <MenuBtn onClick={() => setShowExportMenu(true)}>Export <ChevronRight size={14} /></MenuBtn>
-                          <MenuBtn onClick={() => setShowImportMenu(true)} disabled={isLockedForEdit}>Import <ChevronRight size={14} /></MenuBtn>
-                          <MenuBtn onClick={toggleSubjectLock} disabled={isGlobalLocked} icon={isSubjectLocked ? <Unlock size={14} /> : <Lock size={14} />}>
-                            {isSubjectLocked ? "Unlock View" : "Lock View"}
+                          <MenuBtn onClick={() => setShowImportMenu(true)} disabled={isStructureLocked}>Import <ChevronRight size={14} /></MenuBtn>
+                          <MenuBtn onClick={toggleSubjectLock} icon={subjectViewLock ? <Unlock size={14} /> : <Lock size={14} />}>
+                            {subjectViewLock ? "Unlock View" : "Lock View"}
                           </MenuBtn>
 
                           <div className="h-[1px] bg-[hsl(var(--border))] my-1" />
                           <div className="text-[10px] font-bold uppercase tracking-widest text-[hsl(var(--muted-foreground))] px-2 py-1">Instances</div>
 
-                          <MenuBtn onClick={() => { setIsCloneModalOpen(true); setMenuOpen(false); }} disabled={isLockedForEdit} icon={<Plus size={14} />}>
+                          <MenuBtn onClick={() => { setIsCloneModalOpen(true); setMenuOpen(false); }} disabled={isStructureLocked} icon={<Plus size={14} />}>
                             Create New Instance
                           </MenuBtn>
 
@@ -409,11 +408,11 @@ export function SubjectView({ subjectId, highlightId }: { subjectId: string; hig
                             </div>
                           )}
 
-                          <MenuBtn onClick={handleRenameInstance} disabled={isLockedForEdit}>Rename Instance</MenuBtn>
-                          <MenuBtn onClick={() => { setShowResetModal(true); setMenuOpen(false); }} disabled={isLockedForEdit} className="text-orange-500 hover:bg-orange-500/10">
+                          <MenuBtn onClick={handleRenameInstance} disabled={isStructureLocked}>Rename Instance</MenuBtn>
+                          <MenuBtn onClick={() => { setShowResetModal(true); setMenuOpen(false); }} disabled={isStructureLocked} className="text-orange-500 hover:bg-orange-500/10">
                             Reset Progress
                           </MenuBtn>
-                          <MenuBtn onClick={handleDeleteInstance} disabled={isLockedForEdit} className="text-red-500 hover:bg-red-500/10" icon={<Trash2 size={14} />}>
+                          <MenuBtn onClick={handleDeleteInstance} disabled={isStructureLocked} className="text-red-500 hover:bg-red-500/10" icon={<Trash2 size={14} />}>
                             Delete Instance
                           </MenuBtn>
                         </>
@@ -468,16 +467,16 @@ export function SubjectView({ subjectId, highlightId }: { subjectId: string; hig
           {/* ─── Task List ────────────────────────────────────────── */}
           <div className="flex-1 pb-20">
             <Reorder.Group axis="y" values={topLevel} onReorder={(newOrder) => {
-              if (!isLockedForEdit) newOrder.forEach((t, i) => db.tasks.update(t.id, { order: i }));
+              if (!isStructureLocked) newOrder.forEach((t, i) => db.tasks.update(t.id, { order: i }));
             }} className="flex flex-col gap-6">
               {topLevel.map(item =>
                 item.type === 'section'
-                  ? <SectionNode key={item.id} section={item} allTasks={tasks} isLockedForEdit={isLockedForEdit} settings={settings} subjectId={subjectId} expandedSections={expandedSections} toggleSection={toggleSection} onCascadeDelete={cascadeDeleteSection} />
-                  : <TaskNode key={item.id} task={item} isLockedForEdit={isLockedForEdit} settings={settings} />
+                  ? <SectionNode key={item.id} section={item} allTasks={tasks} isStructureLocked={isStructureLocked} settings={settings} subjectId={subjectId} expandedSections={expandedSections} toggleSection={toggleSection} onCascadeDelete={cascadeDeleteSection} />
+                  : <TaskNode key={item.id} task={item} isStructureLocked={isStructureLocked} settings={settings} />
               )}
             </Reorder.Group>
 
-            {!isLockedForEdit && (
+            {!isStructureLocked && (
               <div className="mt-8 flex items-center gap-4 flex-wrap">
                 <button onClick={() => db.tasks.add({ id: uuidv4(), subjectId, instanceId: selectedInstanceId, parentId: null, type: 'task', title: '', description: '', notes: '', completed: false, order: tasks.length })} className="flex items-center gap-2 text-[13px] font-medium text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] px-4 py-2 bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-full shadow-sm hover:shadow-md transition-all">
                   <Plus size={16} /> Add Task
@@ -500,7 +499,7 @@ export function SubjectView({ subjectId, highlightId }: { subjectId: string; hig
         {isImportModalOpen && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setIsImportModalOpen(false)} onKeyDown={e => { if (e.key === 'Escape') setIsImportModalOpen(false); }}>
             <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="w-full max-w-lg bg-[hsl(var(--background))] border border-[hsl(var(--border))] rounded-2xl shadow-xl overflow-hidden flex flex-col relative" onClick={e => e.stopPropagation()}>
-              <button onClick={() => setIsImportModalOpen(false)} className="absolute top-4 right-4 z-10 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] p-1"><X size={18} /></button>
+              {!showAiGuide && <button onClick={() => setIsImportModalOpen(false)} className="absolute top-4 right-4 z-10 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] p-1"><X size={18} /></button>}
 
               {showAiGuide ? (
                 <div className="p-6 flex flex-col h-[80vh] max-h-[600px] overflow-hidden">
@@ -521,7 +520,6 @@ export function SubjectView({ subjectId, highlightId }: { subjectId: string; hig
                       <button onClick={() => setImportTab('paste')} className={`text-sm font-medium pb-1 border-b-2 transition-colors ${importTab === 'paste' ? 'border-[hsl(var(--primary))] text-[hsl(var(--foreground))]' : 'border-transparent text-[hsl(var(--muted-foreground))]'}`}>Paste JSON</button>
                       <button onClick={() => setImportTab('upload')} className={`text-sm font-medium pb-1 border-b-2 transition-colors ${importTab === 'upload' ? 'border-[hsl(var(--primary))] text-[hsl(var(--foreground))]' : 'border-transparent text-[hsl(var(--muted-foreground))]'}`}>Upload File</button>
                     </div>
-                    <button onClick={() => setShowAiGuide(true)} className="text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] p-1" title="AI Import Guide"><Info size={18} /></button>
                   </div>
                   <div className="p-6 flex flex-col gap-4">
                     {importTab === 'paste' ? (
@@ -535,8 +533,8 @@ export function SubjectView({ subjectId, highlightId }: { subjectId: string; hig
                         <input type="file" accept=".json,.zip" ref={fileInputRef} className="hidden" onChange={handleFileUpload} />
                       </>
                     )}
-                    <div className="flex gap-3 justify-end mt-2">
-                      <button onClick={() => setIsImportModalOpen(false)} className="px-4 py-2 rounded-xl hover:bg-[hsl(var(--muted))] text-sm font-medium transition-colors text-[hsl(var(--foreground))]">Cancel</button>
+                    <div className="flex items-center justify-between mt-2">
+                      <button onClick={() => setShowAiGuide(true)} className="text-sm font-medium text-[hsl(var(--primary))] hover:underline transition-colors">Need help?</button>
                       {importTab === 'paste' && <button onClick={() => processImport(pasteData)} className="px-5 py-2 rounded-xl bg-[hsl(var(--primary))] text-white text-sm font-medium transition-colors">Import</button>}
                     </div>
                   </div>
@@ -611,9 +609,15 @@ function MenuBtn({ children, onClick, disabled, className, icon }: { children: R
 
 // ─── SectionNode ─────────────────────────────────────────────────────
 
-function SectionNode({ section, allTasks, isLockedForEdit, level = 0, settings, subjectId, expandedSections, toggleSection, onCascadeDelete }: any) {
+
+
+// ─── SectionNode ─────────────────────────────────────────────────────
+
+function SectionNode({ section, allTasks, isStructureLocked, level = 0, settings, subjectId, expandedSections, toggleSection, onCascadeDelete }: any) {
   const children = allTasks.filter((t: any) => t.parentId === section.id).sort((a: any, b: any) => a.order - b.order);
   const [title, setTitle] = useState(section.title);
+  const [showBottomSheet, setShowBottomSheet] = useState(false);
+  const timerRef = useRef<any>(null);
 
   // Expansion state from store (persisted)
   const isExpanded = expandedSections?.[subjectId]?.[section.id] ?? false;
@@ -636,16 +640,41 @@ function SectionNode({ section, allTasks, isLockedForEdit, level = 0, settings, 
   const totalCount = descendants.length;
   const progressPercent = totalCount ? Math.round((completedCount / totalCount) * 100) : 0;
 
+  const handlePointerDown = () => {
+    timerRef.current = setTimeout(() => {
+      setShowBottomSheet(true);
+      if ("vibrate" in navigator) navigator.vibrate(50);
+    }, 400);
+  };
+  const cancelPointer = () => clearTimeout(timerRef.current);
+
+  const duplicateSection = async () => {
+    const newSectionId = uuidv4();
+    await db.tasks.add({ ...section, id: newSectionId, title: section.title + ' (Copy)', order: section.order + 1 });
+    // Shallow copy children for now, full cascade duplicate is complex but this handles basic
+    for (const child of children) {
+      await db.tasks.add({ ...child, id: uuidv4(), parentId: newSectionId });
+    }
+    setShowBottomSheet(false);
+  };
+
   return (
-    <Reorder.Item value={section} dragListener={!isLockedForEdit} className={`flex flex-col bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-xl mb-4 overflow-hidden ${level > 0 ? 'ml-6 border-l-2 border-l-[hsl(var(--primary)/0.5)]' : ''}`}>
-      <div className="flex items-center gap-3 p-4 group cursor-pointer hover:bg-[hsl(var(--muted)/0.3)] transition-colors" onClick={handleToggle}>
+    <Reorder.Item value={section} dragListener={!isStructureLocked} className={`flex flex-col bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-xl mb-4 overflow-hidden ${level > 0 ? 'ml-6 border-l-2 border-l-[hsl(var(--primary)/0.5)]' : ''}`}>
+      <div 
+        className="flex items-center gap-3 p-4 group cursor-pointer hover:bg-[hsl(var(--muted)/0.3)] transition-colors select-none" 
+        onClick={handleToggle}
+        onPointerDown={handlePointerDown}
+        onPointerUp={cancelPointer}
+        onPointerLeave={cancelPointer}
+        onPointerCancel={cancelPointer}
+      >
         <div className="text-[hsl(var(--muted-foreground))]">{isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}</div>
-        {!isLockedForEdit && <div className="text-[hsl(var(--muted-foreground))] opacity-0 group-hover:opacity-100 cursor-grab" onClick={e => e.stopPropagation()}><GripVertical size={16} /></div>}
+        {!isStructureLocked && <div className="text-[hsl(var(--muted-foreground))] opacity-60 md:opacity-0 md:group-hover:opacity-100 cursor-grab shrink-0" onClick={e => e.stopPropagation()}><GripVertical size={16} /></div>}
         <input
           value={title}
           onChange={e => setTitle(e.target.value)}
           onBlur={() => db.tasks.update(section.id, { title })}
-          readOnly={isLockedForEdit}
+          readOnly={isStructureLocked}
           onClick={e => e.stopPropagation()}
           placeholder={level === 0 ? "Section Name" : "Subsection Name"}
           className="text-base font-semibold bg-transparent border-none outline-none text-[hsl(var(--foreground))] flex-1"
@@ -655,7 +684,7 @@ function SectionNode({ section, allTasks, isLockedForEdit, level = 0, settings, 
             <motion.div initial={{ width: 0 }} animate={{ width: `${progressPercent}%` }} className="bg-[hsl(var(--primary))] h-full rounded-full" />
           </div>
           <span className="text-xs font-mono text-[hsl(var(--muted-foreground))] whitespace-nowrap min-w-[3rem] text-right">{completedCount} / {totalCount}</span>
-          {!isLockedForEdit && <button onClick={() => onCascadeDelete(section.id)} className="text-[hsl(var(--muted-foreground))] hover:text-red-500 opacity-0 group-hover:opacity-100 p-1"><Trash2 size={14} /></button>}
+          {!isStructureLocked && <button onClick={() => onCascadeDelete(section.id)} className="text-[hsl(var(--muted-foreground))] hover:text-red-500 opacity-0 group-hover:opacity-100 p-1 hidden md:block"><Trash2 size={14} /></button>}
         </div>
       </div>
 
@@ -663,14 +692,14 @@ function SectionNode({ section, allTasks, isLockedForEdit, level = 0, settings, 
         {isExpanded && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="border-t border-[hsl(var(--border))]">
             <div className="p-4 flex flex-col gap-2">
-              <Reorder.Group axis="y" values={children} onReorder={(newOrder) => { if (!isLockedForEdit) newOrder.forEach((t, i) => db.tasks.update(t.id, { order: i })); }}>
+              <Reorder.Group axis="y" values={children} onReorder={(newOrder) => { if (!isStructureLocked) newOrder.forEach((t, i) => db.tasks.update(t.id, { order: i })); }}>
                 {children.map((child: any) =>
                   child.type === 'section'
-                    ? <SectionNode key={child.id} section={child} allTasks={allTasks} isLockedForEdit={isLockedForEdit} level={level + 1} settings={settings} subjectId={subjectId} expandedSections={expandedSections} toggleSection={toggleSection} onCascadeDelete={onCascadeDelete} />
-                    : <TaskNode key={child.id} task={child} isLockedForEdit={isLockedForEdit} settings={settings} />
+                    ? <SectionNode key={child.id} section={child} allTasks={allTasks} isStructureLocked={isStructureLocked} level={level + 1} settings={settings} subjectId={subjectId} expandedSections={expandedSections} toggleSection={toggleSection} onCascadeDelete={onCascadeDelete} />
+                    : <TaskNode key={child.id} task={child} isStructureLocked={isStructureLocked} settings={settings} />
                 )}
               </Reorder.Group>
-              {!isLockedForEdit && (
+              {!isStructureLocked && (
                 <div className="flex items-center gap-2 mt-1">
                   {level === 0 && (
                     <button onClick={() => db.tasks.add({ id: uuidv4(), subjectId: section.subjectId, instanceId: section.instanceId, parentId: section.id, type: 'section', title: '', description: '', notes: '', completed: false, order: children.length })} className="text-[hsl(var(--muted-foreground))] text-sm py-2 px-3 hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))] rounded-lg flex items-center gap-2 transition-colors">
@@ -686,25 +715,63 @@ function SectionNode({ section, allTasks, isLockedForEdit, level = 0, settings, 
           </motion.div>
         )}
       </AnimatePresence>
+
+      <AnimatePresence>
+        {showBottomSheet && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-end justify-center sm:items-center sm:p-4" onClick={() => setShowBottomSheet(false)}>
+            <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', bounce: 0, duration: 0.3 }} className="w-full sm:max-w-md bg-[hsl(var(--card))] border-t sm:border border-[hsl(var(--border))] rounded-t-2xl sm:rounded-2xl shadow-xl flex flex-col overflow-hidden pb-8 sm:pb-0" onClick={e => e.stopPropagation()}>
+              <div className="w-12 h-1.5 bg-[hsl(var(--border))] rounded-full mx-auto my-3 sm:hidden" />
+              <div className="p-4 border-b border-[hsl(var(--border))]">
+                <h3 className="font-semibold text-[hsl(var(--foreground))]">{title || 'Section Actions'}</h3>
+              </div>
+              <div className="p-2 flex flex-col">
+                <MenuBtn onClick={() => { setShowBottomSheet(false); setTimeout(() => { const el = document.activeElement as HTMLElement; el?.blur(); }, 0); }}>Rename</MenuBtn>
+                {!isStructureLocked && (
+                  <>
+                    <MenuBtn onClick={() => { db.tasks.add({ id: uuidv4(), subjectId: section.subjectId, instanceId: section.instanceId, parentId: section.id, type: 'task', title: '', description: '', notes: '', completed: false, tags: [], order: children.length }); setShowBottomSheet(false); }} icon={<Plus size={16} />}>Add Task</MenuBtn>
+                    <MenuBtn onClick={() => { db.tasks.add({ id: uuidv4(), subjectId: section.subjectId, instanceId: section.instanceId, parentId: section.id, type: 'section', title: '', description: '', notes: '', completed: false, order: children.length }); setShowBottomSheet(false); }} icon={<Plus size={16} />}>Add Subsection</MenuBtn>
+                    <MenuBtn onClick={duplicateSection} icon={<Copy size={16} />}>Duplicate</MenuBtn>
+                    <MenuBtn onClick={() => { onCascadeDelete(section.id); setShowBottomSheet(false); }} className="text-red-500" icon={<Trash2 size={16} />}>Delete</MenuBtn>
+                  </>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </Reorder.Item>
   );
 }
 
 // ─── TaskNode ────────────────────────────────────────────────────────
 
-function TaskNode({ task, isLockedForEdit, settings }: any) {
+function TaskNode({ task, isStructureLocked, settings }: any) {
   const [title, setTitle] = useState(task.title);
   const [isExpanded, setIsExpanded] = useState(false);
   const [tagInput, setTagInput] = useState('');
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showBottomSheet, setShowBottomSheet] = useState(false);
+  
+  const timerRef = useRef<any>(null);
+  const lastTapRef = useRef(0);
 
   const completed = task.completed;
   const tags = task.tags || [];
 
-  // Sync title from db
   useEffect(() => { setTitle(task.title); }, [task.title]);
 
-  // FIXED: uses completedAt, not finishedAt
+  // Click outside to collapse
+  useEffect(() => {
+    if (!isExpanded) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      // Don't collapse if clicking inside bottom sheet
+      if ((e.target as HTMLElement).closest('.task-bottom-sheet')) return;
+      setIsExpanded(false);
+    };
+    // small delay to prevent immediate trigger
+    setTimeout(() => document.addEventListener('mousedown', handleClickOutside), 100);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isExpanded]);
+
   const toggleCompleted = () => {
     const newCompleted = !completed;
     db.tasks.update(task.id, {
@@ -732,15 +799,39 @@ function TaskNode({ task, isLockedForEdit, settings }: any) {
 
   const checkmarkStyle = settings?.checkmarkStyle || 'modern';
 
-  // Lock behavior: allow check, notes, desc, expand/collapse. Block add/delete/rename/reorder.
-  const isStructureLocked = isLockedForEdit;
+  const handlePointerDown = (e: React.PointerEvent) => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 300) {
+      // double tap
+      setIsExpanded(true);
+      lastTapRef.current = 0;
+      return;
+    }
+    lastTapRef.current = now;
+    
+    timerRef.current = setTimeout(() => {
+      setShowBottomSheet(true);
+      if ("vibrate" in navigator) navigator.vibrate(50);
+    }, 400);
+  };
+  const cancelPointer = () => clearTimeout(timerRef.current);
+
+  const duplicateTask = async () => {
+    await db.tasks.add({ ...task, id: uuidv4(), title: task.title + ' (Copy)', order: task.order + 1 });
+    setShowBottomSheet(false);
+  };
 
   return (
-    <Reorder.Item value={task} dragListener={!isStructureLocked} className={`flex flex-col rounded-xl mb-2 border ${isExpanded ? 'border-[hsl(var(--border))] bg-[hsl(var(--card))]' : 'border-transparent hover:border-[hsl(var(--border))] hover:bg-[hsl(var(--muted)/0.3)]'} transition-colors ${completed ? 'opacity-70' : ''}`}>
-      <div className="flex items-start gap-3 p-3 group relative">
-        {!isStructureLocked && <div className="mt-1.5 cursor-grab text-[hsl(var(--muted-foreground))] opacity-0 group-hover:opacity-100 hidden md:block"><GripVertical size={14} /></div>}
+    <Reorder.Item value={task} dragListener={!isStructureLocked} className={`flex flex-col rounded-xl mb-2 border ${isExpanded ? 'border-[hsl(var(--border))] bg-[hsl(var(--card))]' : 'border-transparent hover:border-[hsl(var(--border))] hover:bg-[hsl(var(--muted)/0.3)]'} transition-colors ${completed ? 'opacity-70' : ''}`} onPointerDown={e => e.stopPropagation()}>
+      <div 
+        className="flex items-start gap-3 p-3 group relative select-none"
+        onPointerDown={handlePointerDown}
+        onPointerUp={cancelPointer}
+        onPointerLeave={cancelPointer}
+        onPointerCancel={cancelPointer}
+      >
+        {!isStructureLocked && <div className="mt-1.5 cursor-grab text-[hsl(var(--muted-foreground))] opacity-60 md:opacity-0 md:group-hover:opacity-100 shrink-0"><GripVertical size={14} /></div>}
 
-        {/* Checkbox — always enabled (lock allows completion) */}
         <div className="mt-1 shrink-0">
           <PremiumCheckbox checked={completed} onChange={toggleCompleted} variant={checkmarkStyle} />
         </div>
@@ -754,13 +845,11 @@ function TaskNode({ task, isLockedForEdit, settings }: any) {
             placeholder="Task title"
             className={`bg-transparent border-none outline-none font-medium text-sm flex-1 ${completed ? 'line-through text-[hsl(var(--muted-foreground))]' : 'text-[hsl(var(--foreground))]'}`}
           />
-          {/* YouTube link */}
           {task.youtubeUrl && (
-            <a href={task.youtubeUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-red-500 hover:underline mt-1 flex items-center gap-1">
+            <a href={task.youtubeUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-red-500 hover:underline mt-1 flex items-center gap-1 z-10" onClick={e => e.stopPropagation()}>
               <Youtube size={12} /> Watch Video {task.duration ? `(${Math.round(task.duration / 60)} min)` : ''}
             </a>
           )}
-          {/* Quick info row */}
           {!isExpanded && (tags.length > 0 || completed) && (
             <div className="flex flex-wrap items-center gap-2 mt-2">
               {tags.map((tag: string, idx: number) => (
@@ -773,26 +862,23 @@ function TaskNode({ task, isLockedForEdit, settings }: any) {
           )}
         </div>
 
-        <div className="flex items-center gap-2 mt-1 shrink-0 relative">
-          <button className="p-1 rounded-md text-[hsl(var(--muted-foreground))] md:hidden" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}><MoreVertical size={16} /></button>
-          <div className={`items-center gap-2 ${mobileMenuOpen ? 'flex absolute right-8 bg-[hsl(var(--card))] border border-[hsl(var(--border))] shadow-lg p-1 rounded-lg z-20' : 'hidden md:flex'}`}>
-            {!isStructureLocked && <button onClick={() => db.tasks.delete(task.id)} className="text-[hsl(var(--muted-foreground))] hover:text-red-500 opacity-0 group-hover:opacity-100 p-1 md:opacity-0 md:group-hover:opacity-100"><Trash2 size={14} /></button>}
-            <button onClick={() => setIsExpanded(!isExpanded)} className={`p-1 rounded-md transition-colors ${isExpanded || tags.length > 0 ? 'text-[hsl(var(--foreground))]' : 'text-[hsl(var(--muted-foreground))] opacity-0 group-hover:opacity-100'}`}>
-              {isExpanded ? <ChevronDown size={16} /> : <AlignLeft size={16} />}
-            </button>
-          </div>
+        <div className="flex items-center gap-2 mt-1 shrink-0 relative z-10">
+          {!isStructureLocked && <button onClick={() => db.tasks.delete(task.id)} className="text-[hsl(var(--muted-foreground))] hover:text-red-500 opacity-0 group-hover:opacity-100 p-1 hidden md:block"><Trash2 size={14} /></button>}
+          <button onClick={() => setIsExpanded(!isExpanded)} className={`p-1 rounded-md transition-colors ${isExpanded || tags.length > 0 ? 'text-[hsl(var(--foreground))]' : 'text-[hsl(var(--muted-foreground))] opacity-0 group-hover:opacity-100 hidden md:block'}`}>
+            {isExpanded ? <ChevronDown size={16} /> : <AlignLeft size={16} />}
+          </button>
         </div>
       </div>
 
       <AnimatePresence>
         {isExpanded && (
-          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden border-t border-[hsl(var(--border))]">
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden border-t border-[hsl(var(--border))]" onPointerDown={e => e.stopPropagation()}>
             <div className="p-4 pl-10 sm:pl-12 flex flex-col gap-4">
-              {/* Description — always editable (lock allows notes/desc editing) */}
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] flex items-center gap-1.5"><AlignLeft size={14} /> Description</label>
                 <div className="mt-1">
                   <RichEditor
+                    key={task.id}
                     initialContent={task.description || ''}
                     onSave={jsonContent => db.tasks.update(task.id, { description: jsonContent })}
                     readOnly={false}
@@ -800,7 +886,6 @@ function TaskNode({ task, isLockedForEdit, settings }: any) {
                 </div>
               </div>
 
-              {/* Tags */}
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] flex items-center gap-1.5"><Tag size={14} /> Tags</label>
                 <div className="flex flex-wrap items-center gap-2">
@@ -810,19 +895,40 @@ function TaskNode({ task, isLockedForEdit, settings }: any) {
                       {!isStructureLocked && <X size={12} className="cursor-pointer hover:text-[hsl(var(--foreground))]" onClick={() => removeTag(tag)} />}
                     </span>
                   ))}
-                  {!isStructureLocked && (
-                    <input value={tagInput} onChange={e => setTagInput(e.target.value)} onKeyDown={addTag} placeholder="Add tag..." className="bg-transparent border border-[hsl(var(--border))] rounded-md px-2 py-1 flex-1 min-w-[120px] text-xs outline-none focus:border-[hsl(var(--primary))] text-[hsl(var(--foreground))]" />
-                  )}
+                  <input value={tagInput} onChange={e => setTagInput(e.target.value)} onKeyDown={addTag} placeholder="Add tag..." className="bg-transparent border border-[hsl(var(--border))] rounded-md px-2 py-1 flex-1 min-w-[120px] text-xs outline-none focus:border-[hsl(var(--primary))] text-[hsl(var(--foreground))]" />
                 </div>
               </div>
 
-              {/* Completion date */}
               {completed && task.completedAt && (
                 <div className="flex items-center gap-1.5 text-xs text-[hsl(var(--muted-foreground))] font-medium border-t border-[hsl(var(--border))] pt-3 mt-1">
                   <Calendar size={14} /> Completed on {formatDate(task.completedAt)}
                 </div>
               )}
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showBottomSheet && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-end justify-center sm:items-center sm:p-4 task-bottom-sheet" onClick={() => setShowBottomSheet(false)} onPointerDown={e => e.stopPropagation()}>
+            <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', bounce: 0, duration: 0.3 }} className="w-full sm:max-w-md bg-[hsl(var(--card))] border-t sm:border border-[hsl(var(--border))] rounded-t-2xl sm:rounded-2xl shadow-xl flex flex-col overflow-hidden pb-8 sm:pb-0" onClick={e => e.stopPropagation()}>
+              <div className="w-12 h-1.5 bg-[hsl(var(--border))] rounded-full mx-auto my-3 sm:hidden" />
+              <div className="p-4 border-b border-[hsl(var(--border))]">
+                <h3 className="font-semibold text-[hsl(var(--foreground))]">{title || 'Task Actions'}</h3>
+              </div>
+              <div className="p-2 flex flex-col">
+                <MenuBtn onClick={() => { setIsExpanded(true); setShowBottomSheet(false); }} icon={<AlignLeft size={16} />}>Expand Description</MenuBtn>
+                <MenuBtn onClick={() => { navigator.clipboard.writeText(title); showToast('Copied to clipboard'); setShowBottomSheet(false); }} icon={<Copy size={16} />}>Copy Title</MenuBtn>
+                {!isStructureLocked && (
+                  <>
+                    <MenuBtn onClick={() => { setIsExpanded(true); setShowBottomSheet(false); setTimeout(() => { document.querySelector('input[placeholder="Add tag..."]')?.dispatchEvent(new MouseEvent('focus')); }, 100); }} icon={<Tag size={16} />}>Add Tags</MenuBtn>
+                    <MenuBtn onClick={duplicateTask} icon={<Copy size={16} />}>Duplicate</MenuBtn>
+                    <MenuBtn onClick={() => { db.tasks.delete(task.id); setShowBottomSheet(false); }} className="text-red-500" icon={<Trash2 size={16} />}>Delete</MenuBtn>
+                  </>
+                )}
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
