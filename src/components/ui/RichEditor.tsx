@@ -15,18 +15,52 @@ import TableCell from '@tiptap/extension-table-cell';
 import Youtube from '@tiptap/extension-youtube';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
+import { Markdown } from '@tiptap/markdown';
 import TextAlign from '@tiptap/extension-text-align';
 import { createPortal } from 'react-dom';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../../db';
 import { NodeSelection } from '@tiptap/pm/state';
 import {
-  Bold, Italic, Strikethrough, Underline as UnderlineIcon, Code, Heading1, Heading2, Heading3,
-  List, ListOrdered, Link as LinkIcon, Undo, Redo, Maximize2, Minimize2, Check,
-  ChevronDown, ChevronRight, Type, Quote, Minus, Info, Table as TableIcon,
-  Columns, Youtube as YoutubeIcon, Globe, Edit3, Trash2, Palette, Highlighter,
-  GripVertical, CheckSquare, Plus, AlignLeft, AlignCenter, AlignRight, AlignJustify
+  Undo,
+  Redo,
+  Bold,
+  Italic,
+  Underline as UnderlineIcon,
+  Strikethrough,
+  Code,
+  Type,
+  Palette,
+  Highlighter,
+  Heading1,
+  Heading2,
+  Heading3,
+  List,
+  ListOrdered,
+  CheckSquare,
+  ChevronRight,
+  ChevronDown,
+  Quote,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  AlignJustify,
+  Minus,
+  Info,
+  Table as TableIcon,
+  Columns,
+  Youtube as YoutubeIcon,
+  Globe,
+  Link as LinkIcon,
+  Plus,
+  Minimize2,
+  Maximize2,
+  Check,
+  Edit3,
+  Trash2,
+  GripVertical
 } from 'lucide-react';
+
 
 // ─── Props ───────────────────────────────────────────────────────────
 
@@ -34,12 +68,16 @@ interface RichEditorProps {
   initialContent?: string;
   onSave: (content: string) => void;
   readOnly?: boolean;
+  mode?: 'markdown' | 'rich';
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
-function parseContent(raw?: string) {
+function parseContent(raw?: string, mode?: 'markdown' | 'rich') {
   if (!raw) return undefined;
+  if (mode === 'markdown') {
+    return raw;
+  }
   try {
     return JSON.parse(raw);
   } catch {
@@ -354,10 +392,37 @@ const ToolbarButton = memo(function ToolbarButton({ onClick, active, children, t
 
 // ─── Component ───────────────────────────────────────────────────────
 
-export const RichEditor = memo(function RichEditor({ initialContent, onSave, readOnly = false }: RichEditorProps) {
+export const RichEditor = memo(function RichEditor({ 
+  initialContent, 
+  onSave, 
+  readOnly = false,
+  mode = 'rich'
+}: RichEditorProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [tick, setTick] = useState(0);
+
+  // Sync refs for stale closures
+  const editorRef = useRef<any>(null);
+  const isEditingRef = useRef(isEditing);
+  const modeRef = useRef(mode);
+  const onSaveRef = useRef(onSave);
+  const executeCommandRef = useRef<any>(null);
+  const hasUnsavedChangesRef = useRef(false);
+  const lastSavedContentRef = useRef<string | null>(null);
+  const lastSetInitialContentRef = useRef<string | undefined>(initialContent);
+
+  useEffect(() => {
+    isEditingRef.current = isEditing;
+  }, [isEditing]);
+
+  useEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
+
+  useEffect(() => {
+    onSaveRef.current = onSave;
+  }, [onSave]);
 
   // Pickers state
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -386,9 +451,30 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
   // Force render helper
   const forceUpdate = () => setTick(t => t + 1);
 
-  // Revoke blob URLs on unmount
+  const runToolbarAction = (action: () => void) => {
+    action();
+    forceUpdate();
+  };
+
+  // Revoke blob URLs on unmount and flush pending saves
   useEffect(() => {
     return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      if (hasUnsavedChangesRef.current) {
+        hasUnsavedChangesRef.current = false;
+        if (editorRef.current) {
+          const ed = editorRef.current;
+          const savedVal = modeRef.current === 'markdown' && typeof ed.getMarkdown === 'function'
+            ? ed.getMarkdown()
+            : JSON.stringify(ed.getJSON());
+          lastSavedContentRef.current = savedVal;
+          lastSetInitialContentRef.current = savedVal;
+          onSaveRef.current(savedVal);
+        }
+      }
       for (const url of blobUrlsRef.current) {
         URL.revokeObjectURL(url);
       }
@@ -396,7 +482,19 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
   }, []);
 
   const editor = useEditor({
-    extensions: [
+    extensions: mode === 'markdown' ? [
+      StarterKit.configure({
+        heading: { levels: [1, 2, 3] },
+      }),
+      Link.configure({ openOnClick: true, autolink: true }),
+      Table.configure({ resizable: true }),
+      TableRow,
+      TableHeader,
+      TableCell,
+      TaskList,
+      TaskItem.configure({ nested: true }),
+      Markdown.configure({ html: false, linkify: true } as any),
+    ] : [
       StarterKit.configure({
         heading: { levels: [1, 2, 3] },
       }),
@@ -423,9 +521,9 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
       LinkPreview,
       Iframe,
     ],
-    content: parseContent(initialContent),
+    content: parseContent(initialContent, mode),
     editable: isEditing && !readOnly,
-    onSelectionUpdate: () => {
+     onSelectionUpdate: () => {
       forceUpdate();
     },
     onTransaction: () => {
@@ -433,11 +531,19 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
     },
     onUpdate: ({ editor: ed }) => {
       forceUpdate();
+      hasUnsavedChangesRef.current = true;
       
       // Debounced auto-save
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
-        onSave(JSON.stringify(ed.getJSON()));
+        saveTimerRef.current = null;
+        hasUnsavedChangesRef.current = false;
+        const savedVal = modeRef.current === 'markdown' && typeof ed.getMarkdown === 'function'
+          ? ed.getMarkdown()
+          : JSON.stringify(ed.getJSON());
+        lastSavedContentRef.current = savedVal;
+        lastSetInitialContentRef.current = savedVal;
+        onSaveRef.current(savedVal);
       }, 500);
 
       // Check for slash menu
@@ -446,7 +552,7 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
       const textBefore = $anchor.parent.textBetween(0, $anchor.parentOffset);
       const match = textBefore.match(/(?:^|\s)\/([a-zA-Z0-9_-]*)$/);
 
-      if (match && isEditing) {
+      if (match && isEditingRef.current) {
         setShowSlashMenu(true);
         setSlashQuery(match[1]);
         try {
@@ -457,6 +563,23 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
         }
       } else {
         setShowSlashMenu(false);
+      }
+    },
+    onBlur: ({ editor: ed }) => {
+      if (isEditingRef.current) {
+        if (saveTimerRef.current) {
+          clearTimeout(saveTimerRef.current);
+          saveTimerRef.current = null;
+        }
+        if (hasUnsavedChangesRef.current) {
+          hasUnsavedChangesRef.current = false;
+          const savedVal = modeRef.current === 'markdown' && typeof ed.getMarkdown === 'function'
+            ? ed.getMarkdown()
+            : JSON.stringify(ed.getJSON());
+          lastSavedContentRef.current = savedVal;
+          lastSetInitialContentRef.current = savedVal;
+          onSaveRef.current(savedVal);
+        }
       }
     },
     editorProps: {
@@ -475,8 +598,8 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
           if (event.key === 'Enter') {
             event.preventDefault();
             const cmd = filteredCommandsRef.current[activeCommandIndexRef.current];
-            if (cmd) {
-              executeCommand(cmd);
+            if (cmd && executeCommandRef.current) {
+              executeCommandRef.current(cmd);
             }
             return true;
           }
@@ -490,11 +613,25 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
       },
       handlePaste: (view, event) => {
         const text = event.clipboardData?.getData('text/plain');
-        if (text && /^(https?:\/\/[^\s]+)$/.test(text.trim()) && isEditing) {
+        const activeEditor = editorRef.current || editor;
+        if (text && /^(https?:\/\/[^\s]+)$/.test(text.trim()) && isEditingRef.current) {
           event.preventDefault();
+          const { selection } = view.state;
+          
+          if (!selection.empty) {
+            activeEditor?.chain().focus().setLink({ href: text.trim() }).run();
+            forceUpdate();
+            return true;
+          }
+
+          if (modeRef.current === 'markdown') {
+            activeEditor?.chain().focus().insertContent(`<a href="${text.trim()}">${text.trim()}</a>`).run();
+            forceUpdate();
+            return true;
+          }
+
           setPastedUrl(text.trim());
           try {
-            const { selection } = view.state;
             const coords = view.coordsAtPos(selection.from);
             setPastedUrlCoords({ top: coords.bottom, left: coords.left });
             setShowPasteOptions(true);
@@ -514,6 +651,9 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
         for (const item of Array.from(items)) {
           if (item.type.startsWith('image/')) {
             event.preventDefault();
+            if (modeRef.current === 'markdown') {
+              return true;
+            }
             const file = item.getAsFile();
             if (!file) return true;
 
@@ -552,15 +692,51 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
     },
   });
 
-  // Sync editable state when isEditing changes
+  useEffect(() => {
+    editorRef.current = editor;
+  }, [editor]);
+
+  // Sync editable state and save changes when isEditing transitions to false
   useEffect(() => {
     if (editor) {
       editor.setEditable(isEditing && !readOnly);
       if (isEditing) {
         editor.commands.focus();
+      } else {
+        if (saveTimerRef.current) {
+          clearTimeout(saveTimerRef.current);
+          saveTimerRef.current = null;
+        }
+        if (hasUnsavedChangesRef.current) {
+          hasUnsavedChangesRef.current = false;
+          const savedVal = modeRef.current === 'markdown' && typeof editor.getMarkdown === 'function'
+            ? editor.getMarkdown()
+            : JSON.stringify(editor.getJSON());
+          lastSavedContentRef.current = savedVal;
+          lastSetInitialContentRef.current = savedVal;
+          onSaveRef.current(savedVal);
+        }
       }
     }
   }, [editor, isEditing, readOnly]);
+
+  // Sync content when initialContent changes asynchronously and editor is not focused/editing
+  useEffect(() => {
+    if (editor && !isEditingRef.current) {
+      const target = initialContent || '';
+      if (target === lastSetInitialContentRef.current) {
+        return;
+      }
+      lastSetInitialContentRef.current = target;
+      
+      if (mode === 'markdown') {
+        editor.commands.setContent(target);
+      } else {
+        const parsed = parseContent(target, mode);
+        editor.commands.setContent(parsed || '');
+      }
+    }
+  }, [editor, initialContent, mode]);
 
   // Handle click outside to save and close
   useEffect(() => {
@@ -620,7 +796,7 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
       description: 'Start writing plain text',
       icon: <Type size={15} />,
       keywords: ['text', 'paragraph', 'p'],
-      action: () => editor.chain().focus().setParagraph().run(),
+      action: () => (editorRef.current || editor).chain().focus().setParagraph().run(),
     },
     {
       id: 'h1',
@@ -628,7 +804,7 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
       description: 'Large heading block',
       icon: <Heading1 size={15} />,
       keywords: ['h1', 'heading', 'large'],
-      action: () => editor.chain().focus().toggleHeading({ level: 1 }).run(),
+      action: () => (editorRef.current || editor).chain().focus().toggleHeading({ level: 1 }).run(),
     },
     {
       id: 'h2',
@@ -636,7 +812,7 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
       description: 'Medium heading block',
       icon: <Heading2 size={15} />,
       keywords: ['h2', 'heading', 'medium'],
-      action: () => editor.chain().focus().toggleHeading({ level: 2 }).run(),
+      action: () => (editorRef.current || editor).chain().focus().toggleHeading({ level: 2 }).run(),
     },
     {
       id: 'h3',
@@ -644,7 +820,7 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
       description: 'Small heading block',
       icon: <Heading3 size={15} />,
       keywords: ['h3', 'heading', 'small'],
-      action: () => editor.chain().focus().toggleHeading({ level: 3 }).run(),
+      action: () => (editorRef.current || editor).chain().focus().toggleHeading({ level: 3 }).run(),
     },
     {
       id: 'bulletList',
@@ -652,7 +828,7 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
       description: 'Create a simple bulleted list',
       icon: <List size={15} />,
       keywords: ['bullet', 'list', 'ul'],
-      action: () => editor.chain().focus().toggleBulletList().run(),
+      action: () => (editorRef.current || editor).chain().focus().toggleBulletList().run(),
     },
     {
       id: 'orderedList',
@@ -660,7 +836,7 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
       description: 'Create a list with numbering',
       icon: <ListOrdered size={15} />,
       keywords: ['ordered', 'list', 'ol', 'numbered'],
-      action: () => editor.chain().focus().toggleOrderedList().run(),
+      action: () => (editorRef.current || editor).chain().focus().toggleOrderedList().run(),
     },
     {
       id: 'todoList',
@@ -668,7 +844,7 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
       description: 'List with checkbox tasks',
       icon: <CheckSquare size={15} />,
       keywords: ['todo', 'task', 'checklist', 'checkbox'],
-      action: () => editor.chain().focus().toggleTaskList().run(),
+      action: () => (editorRef.current || editor).chain().focus().toggleTaskList().run(),
     },
     {
       id: 'toggleList',
@@ -677,7 +853,7 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
       icon: <ChevronRight size={15} />,
       keywords: ['toggle', 'collapse', 'details', 'summary'],
       action: () => {
-        editor.chain().focus().insertContent([
+        (editorRef.current || editor).chain().focus().insertContent([
           {
             type: 'details',
             content: [
@@ -694,7 +870,7 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
       description: 'Capture a citation or quote',
       icon: <Quote size={15} />,
       keywords: ['quote', 'blockquote', 'cite'],
-      action: () => editor.chain().focus().toggleBlockquote().run(),
+      action: () => (editorRef.current || editor).chain().focus().toggleBlockquote().run(),
     },
     {
       id: 'codeBlock',
@@ -702,7 +878,7 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
       description: 'Code container with formatting',
       icon: <Code size={15} className="scale-x-110" />,
       keywords: ['code', 'block', 'pre'],
-      action: () => editor.chain().focus().toggleCodeBlock().run(),
+      action: () => (editorRef.current || editor).chain().focus().toggleCodeBlock().run(),
     },
     {
       id: 'alignLeft',
@@ -710,7 +886,7 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
       description: 'Left align current block',
       icon: <AlignLeft size={15} />,
       keywords: ['align', 'left', 'justify-left'],
-      action: () => editor.chain().focus().setTextAlign('left').run(),
+      action: () => (editorRef.current || editor).chain().focus().setTextAlign('left').run(),
     },
     {
       id: 'alignCenter',
@@ -718,7 +894,7 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
       description: 'Center align current block',
       icon: <AlignCenter size={15} />,
       keywords: ['align', 'center', 'justify-center'],
-      action: () => editor.chain().focus().setTextAlign('center').run(),
+      action: () => (editorRef.current || editor).chain().focus().setTextAlign('center').run(),
     },
     {
       id: 'alignRight',
@@ -726,7 +902,7 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
       description: 'Right align current block',
       icon: <AlignRight size={15} />,
       keywords: ['align', 'right', 'justify-right'],
-      action: () => editor.chain().focus().setTextAlign('right').run(),
+      action: () => (editorRef.current || editor).chain().focus().setTextAlign('right').run(),
     },
     {
       id: 'alignJustify',
@@ -734,7 +910,7 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
       description: 'Justify current block text',
       icon: <AlignJustify size={15} />,
       keywords: ['align', 'justify', 'justify-all'],
-      action: () => editor.chain().focus().setTextAlign('justify').run(),
+      action: () => (editorRef.current || editor).chain().focus().setTextAlign('justify').run(),
     },
     {
       id: 'divider',
@@ -742,7 +918,7 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
       description: 'Horizontal separator line',
       icon: <Minus size={15} />,
       keywords: ['divider', 'hr', 'line'],
-      action: () => editor.chain().focus().setHorizontalRule().run(),
+      action: () => (editorRef.current || editor).chain().focus().setHorizontalRule().run(),
     },
     {
       id: 'callout',
@@ -751,7 +927,7 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
       icon: <Info size={15} />,
       keywords: ['callout', 'info', 'warning', 'alert', 'box'],
       action: () => {
-        editor.chain().focus().insertContent({
+        (editorRef.current || editor).chain().focus().insertContent({
           type: 'callout',
           attrs: { type: 'info' },
           content: [{ type: 'paragraph' }]
@@ -764,7 +940,7 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
       description: 'Standard grid layout table',
       icon: <TableIcon size={15} />,
       keywords: ['table', 'grid', 'cells'],
-      action: () => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
+      action: () => (editorRef.current || editor).chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
     },
     {
       id: 'columns',
@@ -773,7 +949,7 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
       icon: <Columns size={15} />,
       keywords: ['columns', 'layout', 'grid', 'multi-column'],
       action: () => {
-        editor.chain().focus().insertContent({
+        (editorRef.current || editor).chain().focus().insertContent({
           type: 'table',
           attrs: { 'data-columns-layout': 'true' },
           content: [
@@ -797,7 +973,7 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
       action: () => {
         const url = window.prompt('Enter YouTube URL:');
         if (url) {
-          editor.chain().focus().setYoutubeVideo({ src: url }).run();
+          (editorRef.current || editor).chain().focus().setYoutubeVideo({ src: url }).run();
         }
       },
     },
@@ -812,12 +988,12 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
         if (url) {
           try {
             const domain = new URL(url).hostname;
-            editor.chain().focus().insertContent({
+            (editorRef.current || editor).chain().focus().insertContent({
               type: 'linkPreview',
               attrs: { url, title: domain, description: 'Visual bookmark for ' + url }
             }).run();
           } catch {
-            editor.chain().focus().insertContent({
+            (editorRef.current || editor).chain().focus().insertContent({
               type: 'linkPreview',
               attrs: { url, title: 'Bookmark Link', description: 'Visual bookmark for ' + url }
             }).run();
@@ -834,7 +1010,7 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
       action: () => {
         const url = window.prompt('Enter Embed URL:');
         if (url) {
-          editor.chain().focus().insertContent({
+          (editorRef.current || editor).chain().focus().insertContent({
             type: 'iframe',
             attrs: { src: url }
           }).run();
@@ -845,10 +1021,19 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
 
   // Slash commands filtering
   const filteredCommands = commands.filter(
-    cmd =>
-      cmd.title.toLowerCase().includes(slashQuery.toLowerCase()) ||
-      cmd.description.toLowerCase().includes(slashQuery.toLowerCase()) ||
-      cmd.keywords.some(kw => kw.includes(slashQuery.toLowerCase()))
+    cmd => {
+      if (mode === 'markdown') {
+        const allowedMarkdownCommands = ['text', 'h1', 'h2', 'h3', 'bulletList', 'orderedList', 'todoList', 'quote', 'codeBlock', 'divider', 'table'];
+        if (!allowedMarkdownCommands.includes(cmd.id)) {
+          return false;
+        }
+      }
+      return (
+        cmd.title.toLowerCase().includes(slashQuery.toLowerCase()) ||
+        cmd.description.toLowerCase().includes(slashQuery.toLowerCase()) ||
+        cmd.keywords.some(kw => kw.includes(slashQuery.toLowerCase()))
+      );
+    }
   );
 
   // Sync refs for handleKeyDown callback
@@ -861,10 +1046,11 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
   useEffect(() => { filteredCommandsRef.current = filteredCommands; }, [filteredCommands]);
 
   const executeCommand = (cmd: typeof commands[0]) => {
-    if (!editor) return;
+    const activeEditor = editorRef.current || editor;
+    if (!activeEditor) return;
     
     // Delete slash text
-    const { selection } = editor.state;
+    const { selection } = activeEditor.state;
     const $anchor = selection.$anchor;
     const textBefore = $anchor.parent.textBetween(0, $anchor.parentOffset);
     const match = textBefore.match(/(?:^|\s)\/([a-zA-Z0-9_-]*)$/);
@@ -873,13 +1059,17 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
       const matchIndex = textBefore.lastIndexOf('/');
       const startPos = $anchor.start() + matchIndex;
       const endPos = selection.from;
-      editor.chain().focus().deleteRange({ from: startPos, to: endPos }).run();
+      activeEditor.chain().focus().deleteRange({ from: startPos, to: endPos }).run();
     }
 
     cmd.action();
     setShowSlashMenu(false);
     setActiveCommandIndex(0);
   };
+
+  useEffect(() => {
+    executeCommandRef.current = executeCommand;
+  });
 
   // Drag-and-drop handles logic
   const handleMouseMove = (e: React.MouseEvent) => {
@@ -975,221 +1165,231 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
   const renderToolbar = () => (
     <div className="flex items-center gap-0.5 flex-wrap border-b border-[hsl(var(--border))] px-2 py-1.5 bg-[hsl(var(--muted)/0.3)] sticky top-0 z-10 backdrop-blur-md select-none">
       {/* Undo/Redo */}
-      <ToolbarButton onClick={() => editor.chain().focus().undo().run()} title="Undo">
+      <ToolbarButton onClick={() => runToolbarAction(() => editor.chain().focus().undo().run())} title="Undo">
         <Undo size={14} />
       </ToolbarButton>
-      <ToolbarButton onClick={() => editor.chain().focus().redo().run()} title="Redo">
+      <ToolbarButton onClick={() => runToolbarAction(() => editor.chain().focus().redo().run())} title="Redo">
         <Redo size={14} />
       </ToolbarButton>
       <div className="w-px h-5 bg-[hsl(var(--border))] mx-1" />
 
       {/* Formatting */}
-      <ToolbarButton onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive('bold')} title="Bold">
+      <ToolbarButton onClick={() => runToolbarAction(() => editor.chain().focus().toggleBold().run())} active={editor.isActive('bold')} title="Bold">
         <Bold size={14} />
       </ToolbarButton>
-      <ToolbarButton onClick={() => editor.chain().focus().toggleItalic().run()} active={editor.isActive('italic')} title="Italic">
+      <ToolbarButton onClick={() => runToolbarAction(() => editor.chain().focus().toggleItalic().run())} active={editor.isActive('italic')} title="Italic">
         <Italic size={14} />
       </ToolbarButton>
-      <ToolbarButton onClick={() => editor.chain().focus().toggleUnderline().run()} active={editor.isActive('underline')} title="Underline">
-        <UnderlineIcon size={14} />
-      </ToolbarButton>
-      <ToolbarButton onClick={() => editor.chain().focus().toggleStrike().run()} active={editor.isActive('strike')} title="Strikethrough">
+      {mode !== 'markdown' && (
+        <ToolbarButton onClick={() => runToolbarAction(() => editor.chain().focus().toggleUnderline().run())} active={editor.isActive('underline')} title="Underline">
+          <UnderlineIcon size={14} />
+        </ToolbarButton>
+      )}
+      <ToolbarButton onClick={() => runToolbarAction(() => editor.chain().focus().toggleStrike().run())} active={editor.isActive('strike')} title="Strikethrough">
         <Strikethrough size={14} />
       </ToolbarButton>
-      <ToolbarButton onClick={() => editor.chain().focus().toggleCode().run()} active={editor.isActive('code')} title="Inline Code">
+      <ToolbarButton onClick={() => runToolbarAction(() => editor.chain().focus().toggleCode().run())} active={editor.isActive('code')} title="Inline Code">
         <Code size={14} />
       </ToolbarButton>
-      <ToolbarButton onClick={() => editor.chain().focus().clearNodes().unsetAllMarks().run()} title="Clear Formatting">
+      <ToolbarButton onClick={() => runToolbarAction(() => editor.chain().focus().clearNodes().unsetAllMarks().run())} title="Clear Formatting">
         <Type size={14} className="opacity-70" />
       </ToolbarButton>
       <div className="w-px h-5 bg-[hsl(var(--border))] mx-1" />
 
       {/* Text Color Picker */}
-      <div className="relative picker-container">
-        <ToolbarButton onClick={() => { setShowColorPicker(!showColorPicker); setShowHighlightPicker(false); setShowAlignPicker(false); }} title="Text Color">
-          <Palette size={14} />
-        </ToolbarButton>
-        {showColorPicker && (
-          <div className="absolute top-8 left-0 bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-lg shadow-xl p-1 z-20 flex flex-col gap-0.5 w-28 text-left" data-rich-editor-portal="true">
-            {colors.map(col => (
-              <button
-                key={col.name}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  if (col.name === 'Default') {
-                    editor.chain().focus().unsetColor().run();
-                  } else {
-                    editor.chain().focus().setColor(col.value).run();
-                  }
-                  setShowColorPicker(false);
-                }}
-                className="flex items-center gap-1.5 px-2 py-1 hover:bg-[hsl(var(--muted))] text-[10px] rounded text-left w-full text-[hsl(var(--foreground))] cursor-pointer font-medium"
-              >
-                <span className="w-2.5 h-2.5 rounded-full border border-black/10" style={{ backgroundColor: col.value }} />
-                {col.name}
-              </button>
-            ))}
+      {mode !== 'markdown' && (
+        <>
+          <div className="relative picker-container">
+            <ToolbarButton onClick={() => { setShowColorPicker(!showColorPicker); setShowHighlightPicker(false); setShowAlignPicker(false); }} title="Text Color">
+              <Palette size={14} />
+            </ToolbarButton>
+            {showColorPicker && (
+              <div className="absolute top-8 left-0 bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-lg shadow-xl p-1 z-20 flex flex-col gap-0.5 w-28 text-left" data-rich-editor-portal="true">
+                {colors.map(col => (
+                  <button
+                    key={col.name}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      if (col.name === 'Default') {
+                        runToolbarAction(() => editor.chain().focus().unsetColor().run());
+                      } else {
+                        runToolbarAction(() => editor.chain().focus().setColor(col.value).run());
+                      }
+                      setShowColorPicker(false);
+                    }}
+                    className="flex items-center gap-1.5 px-2 py-1 hover:bg-[hsl(var(--muted))] text-[10px] rounded text-left w-full text-[hsl(var(--foreground))] cursor-pointer font-medium"
+                  >
+                    <span className="w-2.5 h-2.5 rounded-full border border-black/10" style={{ backgroundColor: col.value }} />
+                    {col.name}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      {/* Highlight Picker */}
-      <div className="relative picker-container">
-        <ToolbarButton onClick={() => { setShowHighlightPicker(!showHighlightPicker); setShowColorPicker(false); setShowAlignPicker(false); }} title="Text Highlight">
-          <Highlighter size={14} />
-        </ToolbarButton>
-        {showHighlightPicker && (
-          <div className="absolute top-8 left-0 bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-lg shadow-xl p-1 z-20 flex flex-col gap-0.5 w-36 text-left" data-rich-editor-portal="true">
-            {highlights.map(hl => (
-              <button
-                key={hl.name}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  if (hl.name === 'None') {
-                    editor.chain().focus().unsetHighlight().run();
-                  } else {
-                    editor.chain().focus().setHighlight({ color: hl.value }).run();
-                  }
-                  setShowHighlightPicker(false);
-                }}
-                className="flex items-center gap-1.5 px-2 py-1 hover:bg-[hsl(var(--muted))] text-[10px] rounded text-left w-full text-[hsl(var(--foreground))] cursor-pointer font-medium"
-              >
-                <span className="w-2.5 h-2.5 rounded border border-black/10" style={{ backgroundColor: hl.value }} />
-                {hl.name}
-              </button>
-            ))}
+          {/* Highlight Picker */}
+          <div className="relative picker-container">
+            <ToolbarButton onClick={() => { setShowHighlightPicker(!showHighlightPicker); setShowColorPicker(false); setShowAlignPicker(false); }} title="Text Highlight">
+              <Highlighter size={14} />
+            </ToolbarButton>
+            {showHighlightPicker && (
+              <div className="absolute top-8 left-0 bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-lg shadow-xl p-1 z-20 flex flex-col gap-0.5 w-36 text-left" data-rich-editor-portal="true">
+                {highlights.map(hl => (
+                  <button
+                    key={hl.name}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      if (hl.name === 'None') {
+                        runToolbarAction(() => editor.chain().focus().unsetHighlight().run());
+                      } else {
+                        runToolbarAction(() => editor.chain().focus().setHighlight({ color: hl.value }).run());
+                      }
+                      setShowHighlightPicker(false);
+                    }}
+                    className="flex items-center gap-1.5 px-2 py-1 hover:bg-[hsl(var(--muted))] text-[10px] rounded text-left w-full text-[hsl(var(--foreground))] cursor-pointer font-medium"
+                  >
+                    <span className="w-2.5 h-2.5 rounded border border-black/10" style={{ backgroundColor: hl.value }} />
+                    {hl.name}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-        )}
-      </div>
-      <div className="w-px h-5 bg-[hsl(var(--border))] mx-1" />
+          <div className="w-px h-5 bg-[hsl(var(--border))] mx-1" />
+        </>
+      )}
 
       {/* Headings */}
-      <ToolbarButton onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()} active={editor.isActive('heading', { level: 1 })} title="Heading 1">
+      <ToolbarButton onClick={() => runToolbarAction(() => editor.chain().focus().toggleHeading({ level: 1 }).run())} active={editor.isActive('heading', { level: 1 })} title="Heading 1">
         <Heading1 size={14} />
       </ToolbarButton>
-      <ToolbarButton onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} active={editor.isActive('heading', { level: 2 })} title="Heading 2">
+      <ToolbarButton onClick={() => runToolbarAction(() => editor.chain().focus().toggleHeading({ level: 2 }).run())} active={editor.isActive('heading', { level: 2 })} title="Heading 2">
         <Heading2 size={14} />
       </ToolbarButton>
-      <ToolbarButton onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()} active={editor.isActive('heading', { level: 3 })} title="Heading 3">
+      <ToolbarButton onClick={() => runToolbarAction(() => editor.chain().focus().toggleHeading({ level: 3 }).run())} active={editor.isActive('heading', { level: 3 })} title="Heading 3">
         <Heading3 size={14} />
       </ToolbarButton>
       <div className="w-px h-5 bg-[hsl(var(--border))] mx-1" />
 
       {/* Lists */}
-      <ToolbarButton onClick={() => editor.chain().focus().toggleBulletList().run()} active={editor.isActive('bulletList')} title="Bullet List">
+      <ToolbarButton onClick={() => runToolbarAction(() => editor.chain().focus().toggleBulletList().run())} active={editor.isActive('bulletList')} title="Bullet List">
         <List size={14} />
       </ToolbarButton>
-      <ToolbarButton onClick={() => editor.chain().focus().toggleOrderedList().run()} active={editor.isActive('orderedList')} title="Ordered List">
+      <ToolbarButton onClick={() => runToolbarAction(() => editor.chain().focus().toggleOrderedList().run())} active={editor.isActive('orderedList')} title="Ordered List">
         <ListOrdered size={14} />
       </ToolbarButton>
-      <ToolbarButton onClick={() => editor.chain().focus().toggleTaskList().run()} active={editor.isActive('taskList')} title="Task List">
+      <ToolbarButton onClick={() => runToolbarAction(() => editor.chain().focus().toggleTaskList().run())} active={editor.isActive('taskList')} title="Task List">
         <CheckSquare size={14} />
       </ToolbarButton>
       <div className="w-px h-5 bg-[hsl(var(--border))] mx-1" />
 
       {/* Alignment Dropdown */}
-      <div className="relative picker-container">
-        <button
-          type="button"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => {
-            setShowAlignPicker(!showAlignPicker);
-            setShowColorPicker(false);
-            setShowHighlightPicker(false);
-          }}
-          title={
-            editor.isActive({ textAlign: 'center' }) ? 'Align Center' :
-            editor.isActive({ textAlign: 'right' }) ? 'Align Right' :
-            editor.isActive({ textAlign: 'justify' }) ? 'Align Justify' :
-            'Align Left'
-          }
-          className={`p-1.5 rounded-md transition-colors cursor-pointer flex items-center gap-0.5 ${
-            showAlignPicker || editor.isActive({ textAlign: 'center' }) || editor.isActive({ textAlign: 'right' }) || editor.isActive({ textAlign: 'justify' })
-              ? 'bg-[hsl(var(--primary)/0.15)] text-[hsl(var(--primary))]'
-              : 'text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))]'
-          }`}
-        >
-          {editor.isActive({ textAlign: 'center' }) ? <AlignCenter size={14} /> :
-           editor.isActive({ textAlign: 'right' }) ? <AlignRight size={14} /> :
-           editor.isActive({ textAlign: 'justify' }) ? <AlignJustify size={14} /> :
-           <AlignLeft size={14} />}
-          <ChevronDown size={11} className="opacity-60" />
-        </button>
-        {showAlignPicker && (
-          <div className="absolute top-8 left-0 bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-lg shadow-xl p-1 z-20 flex flex-col gap-0.5 w-32 text-left" data-rich-editor-portal="true">
+      {mode !== 'markdown' && (
+        <>
+          <div className="relative picker-container">
             <button
+              type="button"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
-                editor.chain().focus().setTextAlign('left').run();
-                setShowAlignPicker(false);
+                setShowAlignPicker(!showAlignPicker);
+                setShowColorPicker(false);
+                setShowHighlightPicker(false);
               }}
-              className={`flex items-center gap-2 px-2.5 py-1.5 hover:bg-[hsl(var(--muted))] text-[10px] rounded text-left w-full text-[hsl(var(--foreground))] cursor-pointer font-medium ${
-                editor.isActive({ textAlign: 'left' }) || (!editor.isActive({ textAlign: 'center' }) && !editor.isActive({ textAlign: 'right' }) && !editor.isActive({ textAlign: 'justify' }))
-                  ? 'bg-[hsl(var(--primary)/0.1)] text-[hsl(var(--primary))] font-semibold'
-                  : ''
+              title={
+                editor.isActive({ textAlign: 'center' }) ? 'Align Center' :
+                editor.isActive({ textAlign: 'right' }) ? 'Align Right' :
+                editor.isActive({ textAlign: 'justify' }) ? 'Align Justify' :
+                'Align Left'
+              }
+              className={`p-1.5 rounded-md transition-colors cursor-pointer flex items-center gap-0.5 ${
+                showAlignPicker || editor.isActive({ textAlign: 'center' }) || editor.isActive({ textAlign: 'right' }) || editor.isActive({ textAlign: 'justify' })
+                  ? 'bg-[hsl(var(--primary)/0.15)] text-[hsl(var(--primary))]'
+                  : 'text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))]'
               }`}
             >
-              <AlignLeft size={13} />
-              Align Left
+              {editor.isActive({ textAlign: 'center' }) ? <AlignCenter size={14} /> :
+               editor.isActive({ textAlign: 'right' }) ? <AlignRight size={14} /> :
+               editor.isActive({ textAlign: 'justify' }) ? <AlignJustify size={14} /> :
+               <AlignLeft size={14} />}
+              <ChevronDown size={11} className="opacity-60" />
             </button>
-            <button
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => {
-                editor.chain().focus().setTextAlign('center').run();
-                setShowAlignPicker(false);
-              }}
-              className={`flex items-center gap-2 px-2.5 py-1.5 hover:bg-[hsl(var(--muted))] text-[10px] rounded text-left w-full text-[hsl(var(--foreground))] cursor-pointer font-medium ${
-                editor.isActive({ textAlign: 'center' }) ? 'bg-[hsl(var(--primary)/0.1)] text-[hsl(var(--primary))] font-semibold' : ''
-              }`}
-            >
-              <AlignCenter size={13} />
-              Align Center
-            </button>
-            <button
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => {
-                editor.chain().focus().setTextAlign('right').run();
-                setShowAlignPicker(false);
-              }}
-              className={`flex items-center gap-2 px-2.5 py-1.5 hover:bg-[hsl(var(--muted))] text-[10px] rounded text-left w-full text-[hsl(var(--foreground))] cursor-pointer font-medium ${
-                editor.isActive({ textAlign: 'right' }) ? 'bg-[hsl(var(--primary)/0.1)] text-[hsl(var(--primary))] font-semibold' : ''
-              }`}
-            >
-              <AlignRight size={13} />
-              Align Right
-            </button>
-            <button
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => {
-                editor.chain().focus().setTextAlign('justify').run();
-                setShowAlignPicker(false);
-              }}
-              className={`flex items-center gap-2 px-2.5 py-1.5 hover:bg-[hsl(var(--muted))] text-[10px] rounded text-left w-full text-[hsl(var(--foreground))] cursor-pointer font-medium ${
-                editor.isActive({ textAlign: 'justify' }) ? 'bg-[hsl(var(--primary)/0.1)] text-[hsl(var(--primary))] font-semibold' : ''
-              }`}
-            >
-              <AlignJustify size={13} />
-              Align Justify
-            </button>
+            {showAlignPicker && (
+              <div className="absolute top-8 left-0 bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-lg shadow-xl p-1 z-20 flex flex-col gap-0.5 w-32 text-left" data-rich-editor-portal="true">
+                <button
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    runToolbarAction(() => editor.chain().focus().setTextAlign('left').run());
+                    setShowAlignPicker(false);
+                  }}
+                  className={`flex items-center gap-2 px-2.5 py-1.5 hover:bg-[hsl(var(--muted))] text-[10px] rounded text-left w-full text-[hsl(var(--foreground))] cursor-pointer font-medium ${
+                    editor.isActive({ textAlign: 'left' }) || (!editor.isActive({ textAlign: 'center' }) && !editor.isActive({ textAlign: 'right' }) && !editor.isActive({ textAlign: 'justify' }))
+                      ? 'bg-[hsl(var(--primary)/0.1)] text-[hsl(var(--primary))] font-semibold'
+                      : ''
+                  }`}
+                >
+                  <AlignLeft size={13} />
+                  Align Left
+                </button>
+                <button
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    runToolbarAction(() => editor.chain().focus().setTextAlign('center').run());
+                    setShowAlignPicker(false);
+                  }}
+                  className={`flex items-center gap-2 px-2.5 py-1.5 hover:bg-[hsl(var(--muted))] text-[10px] rounded text-left w-full text-[hsl(var(--foreground))] cursor-pointer font-medium ${
+                    editor.isActive({ textAlign: 'center' }) ? 'bg-[hsl(var(--primary)/0.1)] text-[hsl(var(--primary))] font-semibold' : ''
+                  }`}
+                >
+                  <AlignCenter size={13} />
+                  Align Center
+                </button>
+                <button
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    runToolbarAction(() => editor.chain().focus().setTextAlign('right').run());
+                    setShowAlignPicker(false);
+                  }}
+                  className={`flex items-center gap-2 px-2.5 py-1.5 hover:bg-[hsl(var(--muted))] text-[10px] rounded text-left w-full text-[hsl(var(--foreground))] cursor-pointer font-medium ${
+                    editor.isActive({ textAlign: 'right' }) ? 'bg-[hsl(var(--primary)/0.1)] text-[hsl(var(--primary))] font-semibold' : ''
+                  }`}
+                >
+                  <AlignRight size={13} />
+                  Align Right
+                </button>
+                <button
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    runToolbarAction(() => editor.chain().focus().setTextAlign('justify').run());
+                    setShowAlignPicker(false);
+                  }}
+                  className={`flex items-center gap-2 px-2.5 py-1.5 hover:bg-[hsl(var(--muted))] text-[10px] rounded text-left w-full text-[hsl(var(--foreground))] cursor-pointer font-medium ${
+                    editor.isActive({ textAlign: 'justify' }) ? 'bg-[hsl(var(--primary)/0.1)] text-[hsl(var(--primary))] font-semibold' : ''
+                  }`}
+                >
+                  <AlignJustify size={13} />
+                  Align Justify
+                </button>
+              </div>
+            )}
           </div>
-        )}
-      </div>
-      <div className="w-px h-5 bg-[hsl(var(--border))] mx-1" />
+          <div className="w-px h-5 bg-[hsl(var(--border))] mx-1" />
+        </>
+      )}
 
       {/* Block Types */}
-      <ToolbarButton onClick={() => editor.chain().focus().toggleBlockquote().run()} active={editor.isActive('blockquote')} title="Blockquote">
+      <ToolbarButton onClick={() => runToolbarAction(() => editor.chain().focus().toggleBlockquote().run())} active={editor.isActive('blockquote')} title="Blockquote">
         <Quote size={14} />
       </ToolbarButton>
-      <ToolbarButton onClick={() => editor.chain().focus().toggleCodeBlock().run()} active={editor.isActive('codeBlock')} title="Code Block">
+      <ToolbarButton onClick={() => runToolbarAction(() => editor.chain().focus().toggleCodeBlock().run())} active={editor.isActive('codeBlock')} title="Code Block">
         <Code size={14} className="scale-x-110" />
       </ToolbarButton>
-      <ToolbarButton onClick={() => editor.chain().focus().setHorizontalRule().run()} title="Divider Line">
+      <ToolbarButton onClick={() => runToolbarAction(() => editor.chain().focus().setHorizontalRule().run())} title="Divider Line">
         <Minus size={14} />
       </ToolbarButton>
       <ToolbarButton
         onClick={() => {
           const url = window.prompt('Enter URL:');
-          if (url) editor.chain().focus().setLink({ href: url }).run();
+          if (url) runToolbarAction(() => editor.chain().focus().setLink({ href: url }).run());
         }}
         active={editor.isActive('link')}
         title="Add Link"
@@ -1198,7 +1398,7 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
       </ToolbarButton>
       <ToolbarButton
         onClick={() => {
-          editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+          runToolbarAction(() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run());
         }}
         active={editor.isActive('table')}
         title="Insert Grid Table"
@@ -1207,19 +1407,23 @@ export const RichEditor = memo(function RichEditor({ initialContent, onSave, rea
       </ToolbarButton>
 
       {/* Add New Custom Elements Directly */}
-      <div className="w-px h-5 bg-[hsl(var(--border))] mx-1" />
-      <ToolbarButton
-        onClick={() => {
-          editor.chain().focus().insertContent({
-            type: 'callout',
-            attrs: { type: 'info' },
-            content: [{ type: 'paragraph' }]
-          }).run();
-        }}
-        title="Insert Callout Info Box"
-      >
-        <Plus size={14} className="text-[hsl(var(--primary))]" />
-      </ToolbarButton>
+      {mode !== 'markdown' && (
+        <>
+          <div className="w-px h-5 bg-[hsl(var(--border))] mx-1" />
+          <ToolbarButton
+            onClick={() => {
+              runToolbarAction(() => editor.chain().focus().insertContent({
+                type: 'callout',
+                attrs: { type: 'info' },
+                content: [{ type: 'paragraph' }]
+              }).run());
+            }}
+            title="Insert Callout Info Box"
+          >
+            <Plus size={14} className="text-[hsl(var(--primary))]" />
+          </ToolbarButton>
+        </>
+      )}
 
       <div className="flex-1" />
       {/* Fullscreen */}

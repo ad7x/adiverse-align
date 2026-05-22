@@ -1,6 +1,16 @@
 import JSZip from 'jszip';
 import { db } from '../db';
 import type { Task, Subject } from '../types';
+import { Editor } from '@tiptap/core';
+import StarterKit from '@tiptap/starter-kit';
+import Link from '@tiptap/extension-link';
+import { Table } from '@tiptap/extension-table';
+import TableRow from '@tiptap/extension-table-row';
+import TableHeader from '@tiptap/extension-table-header';
+import TableCell from '@tiptap/extension-table-cell';
+import TaskList from '@tiptap/extension-task-list';
+import TaskItem from '@tiptap/extension-task-item';
+import { Markdown } from '@tiptap/markdown';
 
 // ─── Workspace Export (ZIP) ───────────────────────────────────────────
 
@@ -97,8 +107,193 @@ export async function importWorkspaceZip(file: File, mode: 'replace' | 'merge') 
 // ─── Subject/Instance Export (JSON) ──────────────────────────────────
 
 export function exportSubjectJSON(subject: Subject | undefined, tasks: Task[]): string {
-  return JSON.stringify({ subject, tasks }, null, 2);
+  // Build a tree structure of sections, subsections, and tasks
+  // Find all sections (type === 'section' and parentId === null)
+  const rootSections = tasks.filter(t => t.type === 'section' && !t.parentId);
+  
+  // Find all root-level tasks (type !== 'section' and parentId === null)
+  const rootTasks = tasks.filter(t => t.type !== 'section' && !t.parentId);
+
+  const formatTask = (t: Task) => {
+    const obj: any = {
+      title: t.title || '',
+      completed: !!t.completed,
+      description: t.descriptionMarkdown || t.description || '',
+      tags: t.tags || []
+    };
+    if (t.type === 'youtube') {
+      obj.type = 'youtube';
+      if (t.youtubeUrl) obj.youtubeUrl = t.youtubeUrl;
+      if (t.videoId) obj.videoId = t.videoId;
+      if (t.thumbnail) obj.thumbnail = t.thumbnail;
+      if (t.duration) obj.duration = t.duration;
+    }
+    return obj;
+  };
+
+  const formatSubsection = (sub: Task): any => {
+    const childTasks = tasks.filter(t => t.type !== 'section' && t.parentId === sub.id);
+    return {
+      title: sub.title || '',
+      description: sub.descriptionMarkdown || sub.description || '',
+      tags: sub.tags || [],
+      tasks: childTasks.map(formatTask)
+    };
+  };
+
+  const formatSection = (sec: Task): any => {
+    const subsections = tasks.filter(t => t.type === 'section' && t.parentId === sec.id);
+    const childTasks = tasks.filter(t => t.type !== 'section' && t.parentId === sec.id);
+    return {
+      title: sec.title || '',
+      description: sec.descriptionMarkdown || sec.description || '',
+      tags: sec.tags || [],
+      subsections: subsections.map(formatSubsection),
+      tasks: childTasks.map(formatTask)
+    };
+  };
+
+  const exportObj: any = {
+    sections: rootSections.map(formatSection)
+  };
+
+  if (rootTasks.length > 0) {
+    exportObj.tasks = rootTasks.map(formatTask);
+  } else {
+    exportObj.tasks = [];
+  }
+
+  return JSON.stringify(exportObj, null, 2);
 }
+
+// ─── Workspace Export (JSON) ──────────────────────────────────────────
+
+export async function exportWorkspaceJSON(): Promise<string> {
+  const categories = await db.categories.toArray();
+  const domains = await db.domains.toArray();
+  const subjects = await db.subjects.toArray();
+  const subjectInstances = await db.subjectInstances.toArray();
+  const tasks = await db.tasks.toArray();
+  const settings = await db.settings.get('settings');
+
+  const sanitizedTasks = tasks.map(t => {
+    const { notesRich, ...rest } = t;
+    return rest;
+  });
+
+  return JSON.stringify({
+    categories,
+    domains,
+    subjects,
+    subjectInstances,
+    tasks: sanitizedTasks,
+    settings
+  }, null, 2);
+}
+
+export function filterAdvancedNodes(node: any): any {
+  if (!node) return null;
+
+  function filterNode(n: any): any[] {
+    if (!n) return [];
+
+    // Flatten callout and details/content nodes
+    if (n.type === 'callout' || n.type === 'details' || n.type === 'detailsContent') {
+      if (n.content && Array.isArray(n.content)) {
+        return n.content.flatMap(filterNode);
+      }
+      return [];
+    }
+
+    if (n.type === 'detailsSummary') {
+      const content = n.content && Array.isArray(n.content)
+        ? n.content.flatMap(filterNode)
+        : [];
+      return [{
+        type: 'paragraph',
+        content
+      }];
+    }
+
+    // Drop advanced media nodes
+    if (['image', 'youtube', 'iframe', 'linkPreview'].includes(n.type)) {
+      return [];
+    }
+
+    const newNode = { ...n };
+
+    if (newNode.attrs) {
+      const newAttrs = { ...newNode.attrs };
+      delete newAttrs.textAlign;
+      newNode.attrs = newAttrs;
+    }
+
+    if (newNode.marks && Array.isArray(newNode.marks)) {
+      newNode.marks = newNode.marks.filter((mark: any) => {
+        if (!mark) return false;
+        return !['underline', 'highlight', 'textStyle'].includes(mark.type);
+      });
+    }
+
+    if (newNode.content && Array.isArray(newNode.content)) {
+      newNode.content = newNode.content.flatMap(filterNode);
+    }
+
+    return [newNode];
+  }
+
+  if (node.type === 'doc') {
+    const newDoc = { ...node };
+    if (newDoc.content && Array.isArray(newDoc.content)) {
+      newDoc.content = newDoc.content.flatMap(filterNode);
+    }
+    return newDoc;
+  }
+
+  const filtered = filterNode(node);
+  return filtered.length > 0 ? filtered[0] : null;
+}
+
+// ─── Content Migration Utilities ─────────────────────────────────────
+
+export function hasAdvancedNodes(node: any): boolean {
+  if (!node) return false;
+  if (['image', 'youtube', 'iframe', 'linkPreview', 'callout', 'details'].includes(node.type)) {
+    return true;
+  }
+  if (node.content && Array.isArray(node.content)) {
+    return node.content.some(hasAdvancedNodes);
+  }
+  return false;
+}
+
+export function convertJsonToMarkdown(json: any): string {
+  try {
+    const editor = new Editor({
+      extensions: [
+        StarterKit.configure({
+          heading: { levels: [1, 2, 3] },
+        }),
+        Link.configure({ openOnClick: true, autolink: true }),
+        Table.configure({ resizable: true }),
+        TableRow,
+        TableHeader,
+        TableCell,
+        TaskList,
+        TaskItem.configure({ nested: true }),
+        Markdown.configure({ html: false, linkify: true } as any),
+      ],
+      content: json,
+    });
+    const markdown = editor.getMarkdown();
+    editor.destroy();
+    return markdown;
+  } catch (error) {
+    console.error('Failed to convert JSON to Markdown:', error);
+    return '';
+  }
+}
+
 
 // ─── Subject/Instance Export (ZIP) ───────────────────────────────────
 
@@ -110,20 +305,18 @@ export async function exportSubjectZip(subjectId: string, instanceId: string | n
   const exportTasks = instanceId ? allTasks.filter(t => t.instanceId === instanceId) : allTasks;
 
   zip.file('subject.json', JSON.stringify({ subject, tasks: exportTasks }, null, 2));
-
   // Find media IDs referenced in task descriptions/notes using matchAll (no lastIndex bug)
   const mediaIds = new Set<string>();
-  const idPattern = /data-media-id="([a-f0-9-]+)"/g;
+  const idPattern = /(?:data-media-id="|"data-media-id"\s*:\s*")([a-f0-9-]+)"/g;
 
   for (const t of exportTasks) {
-    const searchText = (t.description || '') + (t.notes || '');
+    const searchText = (t.descriptionMarkdown || '') + ' ' + (t.notesRich ? JSON.stringify(t.notesRich) : '');
     if (searchText) {
       for (const match of searchText.matchAll(idPattern)) {
         mediaIds.add(match[1]);
       }
     }
   }
-
   if (mediaIds.size > 0) {
     const mediaFolder = zip.folder('media')!;
     const mediaMeta = [];

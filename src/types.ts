@@ -35,6 +35,8 @@ export interface Task {
   type: 'section' | 'task' | 'youtube';
   title: string;
   description?: string;
+  descriptionMarkdown?: string;
+  notesRich?: { type: 'rich'; content: any };
   notes?: string;
   completed: boolean;
   order: number;
@@ -81,6 +83,8 @@ export interface AppSettings {
   commitmentGoal?: string;
   commitmentDeadline?: string;
   commitmentChecklist?: { text: string; done: boolean }[];
+  soundEnabled?: boolean;
+  celebrationEnabled?: boolean;
 }
 
 export type ViewState =

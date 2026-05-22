@@ -5,6 +5,7 @@ import Fuse from 'fuse.js';
 import { useUIStore } from '../../store';
 import { motion } from 'framer-motion';
 import { Search, Folder, BookOpen, FileText, CheckSquare, X, Tag } from 'lucide-react';
+import { extractPlainText } from '../../lib/utils';
 
 export function SearchView() {
   const { activeView, setActiveView } = useUIStore();
@@ -29,7 +30,7 @@ export function SearchView() {
     ...tasks.map(t => ({
       docType: (t.type === 'section' ? 'Section' : 'Task') as 'Section' | 'Task',
       id: t.id, title: t.title || '',
-      text: `${t.title || ''} ${t.description || ''} ${t.notes || ''} ${(t.tags || []).join(' ')}`,
+      text: `${t.title || ''} ${t.descriptionMarkdown || ''} ${t.notesRich ? extractPlainText(t.notesRich.content) : ''} ${(t.tags || []).join(' ')}`,
       subjectId: t.subjectId,
       icon: 'check',
       tags: t.tags || []

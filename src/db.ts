@@ -109,6 +109,8 @@ db.on('populate', () => {
     userName: '',
     hasCompletedOnboarding: false,
     globalLock: false,
-    exportHistory: []
+    exportHistory: [],
+    soundEnabled: true,
+    celebrationEnabled: true
   });
 });

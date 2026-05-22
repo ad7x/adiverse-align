@@ -8,6 +8,7 @@ import { SearchView } from './components/views/SearchView';
 import { OnboardingModal } from './components/common/OnboardingModal';
 import { db } from './db';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { hasAdvancedNodes, filterAdvancedNodes, convertJsonToMarkdown } from './lib/zip';
 
 export default function App() {
   const { activeView, setActiveView } = useUIStore();
@@ -24,7 +25,9 @@ export default function App() {
             userName: '',
             hasCompletedOnboarding: false,
             globalLock: false,
-            exportHistory: []
+            exportHistory: [],
+            soundEnabled: true,
+            celebrationEnabled: true
           });
         }
       } catch (error) {
@@ -32,6 +35,70 @@ export default function App() {
       }
     };
     initSettings();
+  }, []);
+
+  // Migrate legacy tasks
+  useEffect(() => {
+    const migrateTasks = async () => {
+      try {
+        const tasks = await db.tasks.toArray();
+        const updates: { id: string; changes: any }[] = [];
+        
+        for (const task of tasks) {
+          // If task has a legacy description field but no descriptionMarkdown field
+          if (task.description && task.descriptionMarkdown === undefined) {
+            let changes: any = {};
+            let isJson = false;
+            let jsonContent: any = null;
+            
+            try {
+              jsonContent = JSON.parse(task.description);
+              isJson = (jsonContent && typeof jsonContent === 'object');
+            } catch (e) {
+              // It's already plain text, not JSON
+            }
+            
+            if (isJson && jsonContent) {
+              // Check if old description contains advanced nodes:
+              // (images, youtube, embeds, callouts, iframes, bookmarks/linkPreviews)
+              const hasAdvanced = hasAdvancedNodes(jsonContent);
+              
+              if (hasAdvanced) {
+                // preserve the FULL original content in notesRich
+                changes.notesRich = { type: 'rich', content: jsonContent };
+              }
+              
+              // Only markdown-compatible content should become descriptionMarkdown.
+              // Filter advanced nodes first
+              const cleanedJson = filterAdvancedNodes(jsonContent);
+              // Convert to markdown
+              const markdown = convertJsonToMarkdown(cleanedJson);
+              changes.descriptionMarkdown = markdown;
+            } else {
+              // Plain text or already text: assign directly to descriptionMarkdown
+              changes.descriptionMarkdown = task.description;
+            }
+            
+            // Delete legacy description field by setting to null/undefined or deleting from Dexie update
+            changes.description = null;
+            updates.push({ id: task.id, changes });
+          }
+        }
+        
+        if (updates.length > 0) {
+          console.log(`Migrating ${updates.length} tasks...`);
+          await db.transaction('rw', db.tasks, async () => {
+            for (const item of updates) {
+              await db.tasks.update(item.id, item.changes);
+            }
+          });
+          console.log('Migration complete.');
+        }
+      } catch (error) {
+        console.error('Task migration failed:', error);
+      }
+    };
+    migrateTasks();
   }, []);
 
   useEffect(() => {

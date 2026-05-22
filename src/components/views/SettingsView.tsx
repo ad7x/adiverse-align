@@ -1,12 +1,12 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { db } from '../../db';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Moon, Sun, Download, Upload, Trash2, UserCircle, Plus, Pencil, GripVertical, Palette, CheckSquare, X } from 'lucide-react';
+import { Moon, Sun, Download, Upload, Trash2, UserCircle, Plus, Pencil, GripVertical, Palette, CheckSquare, X, Volume2, Sparkles, Info, Copy } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 
 import { THEME_COLORS, CHECKMARK_STYLES } from '../../types';
-import { exportWorkspaceZip, importWorkspaceZip } from '../../lib/zip';
+import { exportWorkspaceZip, importWorkspaceZip, exportWorkspaceJSON } from '../../lib/zip';
 import { PremiumCheckbox } from '../ui/PremiumCheckbox';
 
 export function SettingsView() {
@@ -53,6 +53,7 @@ export function SettingsView() {
   const [resetChecklistConfirm, setResetChecklistConfirm] = useState('');
   const [deleteWorkspaceConfirm, setDeleteWorkspaceConfirm] = useState('');
   const [importMode, setImportMode] = useState<'replace' | 'merge'>('replace');
+  const [showExportWarning, setShowExportWarning] = useState<{ action: 'copy' | 'download' } | null>(null);
 
   const handleExport = async () => {
     try {
@@ -74,9 +75,17 @@ export function SettingsView() {
   };
 
   const processFullImport = async (jsonStr: string) => {
+    const confirm = window.confirm("Quick JSON export/import excludes advanced notes, media, and images. Do you want to proceed with import?");
+    if (!confirm) return;
     try {
       const data = JSON.parse(jsonStr);
       if (data.categories && data.domains && data.subjects && data.tasks) {
+        // Strip notesRich from imported tasks
+        const sanitizedTasks = data.tasks.map((t: any) => {
+          const { notesRich, ...rest } = t;
+          return rest;
+        });
+
         if (importMode === 'replace') {
            await db.transaction('rw', [db.categories, db.domains, db.subjects, db.subjectInstances, db.tasks], async () => {
              await db.categories.clear();
@@ -88,7 +97,7 @@ export function SettingsView() {
              await db.domains.bulkAdd(data.domains);
              await db.subjects.bulkAdd(data.subjects);
              if (data.subjectInstances) await db.subjectInstances.bulkAdd(data.subjectInstances);
-             await db.tasks.bulkAdd(data.tasks);
+             await db.tasks.bulkAdd(sanitizedTasks);
            });
         } else {
            await db.transaction('rw', [db.categories, db.domains, db.subjects, db.subjectInstances, db.tasks], async () => {
@@ -96,7 +105,7 @@ export function SettingsView() {
              await db.domains.bulkPut(data.domains);
              await db.subjects.bulkPut(data.subjects);
              if (data.subjectInstances) await db.subjectInstances.bulkPut(data.subjectInstances);
-             await db.tasks.bulkPut(data.tasks);
+             await db.tasks.bulkPut(sanitizedTasks);
            });
         }
         setIsImportOpen(false);
@@ -106,6 +115,35 @@ export function SettingsView() {
       }
     } catch (e) {
       alert("Invalid JSON format.");
+    }
+  };
+
+  const handleCopyJSONDirect = async () => {
+    const confirm = window.confirm("Quick JSON export/import excludes advanced notes, media, and images. Do you want to proceed with copy?");
+    if (!confirm) return;
+    try {
+      const json = await exportWorkspaceJSON();
+      await navigator.clipboard.writeText(json);
+      alert('Workspace JSON copied to clipboard');
+    } catch (e) {
+      alert('Failed to copy JSON to clipboard.');
+    }
+  };
+
+  const handleDownloadJSONDirect = async () => {
+    const confirm = window.confirm("Quick JSON export/import excludes advanced notes, media, and images. Do you want to proceed with download?");
+    if (!confirm) return;
+    try {
+      const json = await exportWorkspaceJSON();
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `align-workspace-${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert('Failed to download JSON export.');
     }
   };
 
@@ -252,6 +290,51 @@ export function SettingsView() {
         </section>
 
         <section>
+          <h2 className="text-sm font-semibold uppercase tracking-widest text-[hsl(var(--primary))] mb-4">Interactions & Feedback</h2>
+          <div className="bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-2xl shadow-sm flex flex-col divide-y divide-[hsl(var(--border))]">
+            <div className="p-6 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-[hsl(var(--muted))] rounded-full"><Volume2 size={20} /></div>
+                <div>
+                  <div className="font-medium text-lg">Chime Sound</div>
+                  <div className="text-sm text-[hsl(var(--muted-foreground))]">Play a rewarding sound on task completion</div>
+                </div>
+              </div>
+              <button 
+                onClick={() => db.settings.update('settings', { soundEnabled: !(settings?.soundEnabled ?? true) })}
+                className={`px-6 py-2 rounded-xl text-sm font-medium transition-colors ${
+                  (settings?.soundEnabled ?? true) 
+                    ? 'bg-[hsl(var(--primary))] text-white hover:bg-[hsl(var(--primary)/0.9)]' 
+                    : 'bg-[hsl(var(--muted))] hover:bg-[hsl(var(--border))] text-[hsl(var(--foreground))]'
+                }`}
+              >
+                {(settings?.soundEnabled ?? true) ? 'Enabled' : 'Disabled'}
+              </button>
+            </div>
+            
+            <div className="p-6 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-[hsl(var(--muted))] rounded-full"><Sparkles size={20} /></div>
+                <div>
+                  <div className="font-medium text-lg">Celebration Animation</div>
+                  <div className="text-sm text-[hsl(var(--muted-foreground))]">Show subtle particle burst on completion</div>
+                </div>
+              </div>
+              <button 
+                onClick={() => db.settings.update('settings', { celebrationEnabled: !(settings?.celebrationEnabled ?? true) })}
+                className={`px-6 py-2 rounded-xl text-sm font-medium transition-colors ${
+                  (settings?.celebrationEnabled ?? true) 
+                    ? 'bg-[hsl(var(--primary))] text-white hover:bg-[hsl(var(--primary)/0.9)]' 
+                    : 'bg-[hsl(var(--muted))] hover:bg-[hsl(var(--border))] text-[hsl(var(--foreground))]'
+                }`}
+              >
+                {(settings?.celebrationEnabled ?? true) ? 'Enabled' : 'Disabled'}
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold uppercase tracking-widest text-[hsl(var(--primary))]">Category Manager</h2>
             {globalStructureLock && <span className="text-xs text-[hsl(var(--muted-foreground))]">(Locked)</span>}
@@ -279,22 +362,28 @@ export function SettingsView() {
           <h2 className="text-sm font-semibold uppercase tracking-widest text-[hsl(var(--primary))] mb-4">Workspace Data</h2>
           <div className="bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-2xl overflow-hidden shadow-sm flex flex-col">
             
-            <div className="p-6 flex items-center justify-between border-b border-[hsl(var(--border))]">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-[hsl(var(--primary)/0.1)] rounded-full text-[hsl(var(--primary))]"><Download size={20} /></div>
-                <div>
-                  <div className="font-medium text-lg">Full App Export</div>
-                  <div className="text-sm text-[hsl(var(--muted-foreground))]">Download entire workspace</div>
+            <div className="p-6 flex flex-col gap-4 border-b border-[hsl(var(--border))]">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-amber-500/10 rounded-full text-amber-500"><Download size={20} /></div>
+                  <div>
+                    <div className="font-medium text-lg">Quick JSON Export</div>
+                    <div className="text-sm text-[hsl(var(--muted-foreground))]">Download or copy workspace structure and tasks</div>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setShowExportWarning({ action: 'copy' })} className="px-4 py-2 rounded-xl bg-[hsl(var(--muted))] hover:bg-[hsl(var(--border))] text-sm font-medium flex items-center gap-1.5 transition-colors">
+                    <Copy size={16} /> Copy JSON
+                  </button>
+                  <button onClick={() => setShowExportWarning({ action: 'download' })} className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium flex items-center gap-1.5 transition-colors">
+                    <Download size={16} /> Export JSON
+                  </button>
                 </div>
               </div>
-              <div className="flex flex-col items-end gap-2">
-                <button onClick={handleExport} className="px-6 py-2 rounded-xl bg-[hsl(var(--primary))] text-white font-medium text-sm">Export ZIP</button>
-                {settings?.exportHistory && settings.exportHistory.length > 0 && (
-                  <span className="text-[11px] font-mono text-[hsl(var(--muted-foreground))]">
-                    Last export:<br/>
-                    {new Date(settings.exportHistory[0]).toLocaleDateString()} — {new Date(settings.exportHistory[0]).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                )}
+              
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs flex gap-2">
+                <Info size={16} className="shrink-0 mt-0.5" />
+                <span>Quick JSON export excludes advanced notes, images, and media. Use <strong>Export ZIP</strong> for a full backup.</span>
               </div>
             </div>
 
@@ -351,6 +440,11 @@ export function SettingsView() {
                
                <div className="flex flex-col gap-4">
                  
+                 <div className="p-3 rounded-xl bg-orange-500/10 border border-orange-500/30 text-orange-600 dark:text-orange-400 text-xs flex gap-2">
+                   <Info size={16} className="shrink-0 mt-0.5" />
+                   <span><strong>Warning:</strong> Quick JSON import/export excludes advanced notes, media, and images. Use ZIP import/export for a full backup.</span>
+                 </div>
+
                  <div className="flex bg-[hsl(var(--background))] p-1 rounded-xl mb-2">
                     <button onClick={() => setImportMode('replace')} className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${importMode === 'replace' ? 'bg-[hsl(var(--primary))] text-white' : 'text-[hsl(var(--muted-foreground))]'}`}>Replace Workspace</button>
                     <button onClick={() => setImportMode('merge')} className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${importMode === 'merge' ? 'bg-[hsl(var(--primary))] text-white' : 'text-[hsl(var(--muted-foreground))]'}`}>Merge Workspace</button>
@@ -378,6 +472,38 @@ export function SettingsView() {
                  <button onClick={() => setIsImportOpen(false)} className="px-4 py-2 rounded-xl hover:bg-[hsl(var(--muted))] text-sm font-medium transition-colors text-[hsl(var(--foreground))]">Cancel</button>
                  <button onClick={() => processFullImport(importPasteData)} className="px-5 py-2 rounded-xl bg-[hsl(var(--primary))] text-white text-sm font-medium transition-colors">Import Data</button>
                </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Export Warning Modal */}
+      <AnimatePresence>
+        {showExportWarning && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowExportWarning(null)}>
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="w-full max-w-md bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-2xl shadow-xl p-6" onClick={e => e.stopPropagation()}>
+              <h2 className="text-xl font-semibold mb-2 text-amber-500 flex items-center gap-2">
+                <Info className="text-amber-500" /> Export Warning
+              </h2>
+              <p className="text-sm text-[hsl(var(--muted-foreground))] mb-6">
+                Quick JSON export excludes advanced notes, images, and media. To keep all content, use the <strong>Export ZIP</strong> option instead.
+              </p>
+              <div className="flex gap-3 justify-end">
+                <button onClick={() => setShowExportWarning(null)} className="px-4 py-2 rounded-xl hover:bg-[hsl(var(--muted))] text-sm font-medium text-[hsl(var(--foreground))]">Cancel</button>
+                <button 
+                  onClick={() => {
+                    if (showExportWarning.action === 'copy') {
+                      handleCopyJSONDirect();
+                    } else {
+                      handleDownloadJSONDirect();
+                    }
+                    setShowExportWarning(null);
+                  }} 
+                  className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium"
+                >
+                  Proceed with JSON Export
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}

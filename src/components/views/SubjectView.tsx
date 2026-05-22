@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import {
   MoreHorizontal, Plus, GripVertical, Trash2, ChevronRight,
   Info, Upload, Copy, ChevronDown, Calendar, Tag, AlignLeft, X,
-  MoreVertical, Bot, Youtube, Lock, Unlock, Download, FileJson, Edit3
+  MoreVertical, Bot, Youtube, Lock, Unlock, Download, FileJson, Edit3, FileText
 } from 'lucide-react';
 import { motion, AnimatePresence, Reorder, useMotionValue, useSpring, useMotionTemplate } from 'framer-motion';
 import { PremiumCheckbox } from '../ui/PremiumCheckbox';
@@ -42,6 +42,7 @@ export function SubjectView({ subjectId, highlightId }: { subjectId: string; hig
   const [resetInstanceConfirm, setResetInstanceConfirm] = useState('');
   const [showDeleteSubjectModal, setShowDeleteSubjectModal] = useState(false);
   const [deleteSubjectConfirm, setDeleteSubjectConfirm] = useState('');
+  const [showExportWarning, setShowExportWarning] = useState<{ action: 'copy' | 'download' } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -95,6 +96,18 @@ export function SubjectView({ subjectId, highlightId }: { subjectId: string; hig
       setShowImportMenu(false);
     }
   }, [menuOpen]);
+
+  // Reset expanded tasks when leaving this subject page or when subject changes
+  useEffect(() => {
+    return () => {
+      useUIStore.setState((state) => ({
+        expandedTasks: {
+          ...state.expandedTasks,
+          [subjectId]: {}
+        }
+      }));
+    };
+  }, [subjectId]);
 
   // Computed values
   const subjectViewLock = subject?.isLocked || false;
@@ -194,19 +207,39 @@ export function SubjectView({ subjectId, highlightId }: { subjectId: string; hig
 
   // ─── Export ────────────────────────────────────────────────────
 
-  const handleCopyJSON = async () => {
-    const json = exportSubjectJSON(subject, tasks);
-    try {
-      await navigator.clipboard.writeText(json);
-      showToast('JSON copied to clipboard');
-    } catch { /* clipboard not available */ }
+  const handleCopyJSON = () => {
+    setShowExportWarning({ action: 'copy' });
     setMenuOpen(false);
   };
 
   const handleDownloadJSON = () => {
-    const json = exportSubjectJSON(subject, tasks);
-    downloadBlob(new Blob([json], { type: 'application/json' }), `${slugify(subject?.title)}.json`);
+    setShowExportWarning({ action: 'download' });
     setMenuOpen(false);
+  };
+
+  const handleCopyJSONDirect = async () => {
+    const confirm = window.confirm("Quick JSON export/import excludes advanced notes, media, and images. Do you want to proceed with copy?");
+    if (!confirm) return;
+    const allTasks = await db.tasks.where('subjectId').equals(subjectId).toArray();
+    const currentInstanceTasks = selectedInstanceId 
+      ? allTasks.filter(t => t.instanceId === selectedInstanceId).sort((a, b) => a.order - b.order)
+      : allTasks.sort((a, b) => a.order - b.order);
+    const json = exportSubjectJSON(subject, currentInstanceTasks);
+    try {
+      await navigator.clipboard.writeText(json);
+      showToast('JSON copied to clipboard');
+    } catch { /* clipboard not available */ }
+  };
+
+  const handleDownloadJSONDirect = async () => {
+    const confirm = window.confirm("Quick JSON export/import excludes advanced notes, media, and images. Do you want to proceed with download?");
+    if (!confirm) return;
+    const allTasks = await db.tasks.where('subjectId').equals(subjectId).toArray();
+    const currentInstanceTasks = selectedInstanceId 
+      ? allTasks.filter(t => t.instanceId === selectedInstanceId).sort((a, b) => a.order - b.order)
+      : allTasks.sort((a, b) => a.order - b.order);
+    const json = exportSubjectJSON(subject, currentInstanceTasks);
+    downloadBlob(new Blob([json], { type: 'application/json' }), `${slugify(subject?.title)}.json`);
   };
 
   const handleDownloadZIP = async () => {
@@ -219,41 +252,143 @@ export function SubjectView({ subjectId, highlightId }: { subjectId: string; hig
 
   // ─── Import ────────────────────────────────────────────────────
 
-  const processImport = async (jsonStr: string) => {
+  const processImport = async (jsonStr: string, isZipImport = false) => {
+    if (!isZipImport) {
+      const confirm = window.confirm("Quick JSON export/import excludes advanced notes, media, and images. Do you want to proceed with import?");
+      if (!confirm) return;
+    }
     try {
-      const data = JSON.parse(jsonStr);
+      let data = JSON.parse(jsonStr);
+      if (Array.isArray(data)) {
+        data = { sections: data };
+      }
+
       let globalOrder = tasks.length;
       const tasksToAdd: any[] = [];
 
-      const importSection = (sec: any, parentId: string | null = null) => {
-        const sectionId = uuidv4();
-        tasksToAdd.push({
-          id: sectionId, subjectId, instanceId: selectedInstanceId, parentId, type: 'section',
-          title: sec.title || 'Untitled Section', description: sec.description || '', notes: '', completed: false, order: globalOrder++
-        });
-        for (const ct of (sec.tasks || sec.children || [])) {
-          tasksToAdd.push({
-            id: uuidv4(), subjectId, instanceId: selectedInstanceId, parentId: sectionId, type: 'task',
-            title: ct.title || 'Untitled Task', description: ct.description || '', notes: '', completed: ct.completed || false, order: globalOrder++
-          });
-        }
-        for (const subsec of (sec.subsections || [])) {
-          importSection(subsec, sectionId);
-        }
-      };
+      // Detect flat formats where data.tasks contains DB-dump flat tasks without nesting
+      const isFlatImport = data.tasks && Array.isArray(data.tasks) && data.tasks.every((t: any) => !t.sections && !t.subsections && !t.tasks);
 
-      if (data.sections && Array.isArray(data.sections)) {
-        for (const sec of data.sections) importSection(sec, null);
-      }
-      if (data.tasks && Array.isArray(data.tasks)) {
-        for (const pt of data.tasks) {
-          if (pt.sections || pt.subsections || pt.tasks || pt.children) {
-            importSection(pt, null);
-          } else {
-            tasksToAdd.push({
-              id: uuidv4(), subjectId, instanceId: selectedInstanceId, parentId: null, type: 'task',
-              title: pt.title || 'Untitled Task', description: pt.description || '', notes: '', completed: pt.completed || false, order: globalOrder++
-            });
+      if (isFlatImport) {
+        const idMap: { [oldId: string]: string } = {};
+        for (const t of data.tasks) {
+          if (t.id) {
+            idMap[t.id] = uuidv4();
+          }
+        }
+
+        for (const t of data.tasks) {
+          const newId = t.id ? (idMap[t.id] || uuidv4()) : uuidv4();
+          const newParentId = t.parentId ? (idMap[t.parentId] || null) : null;
+          const descMarkdown = t.descriptionMarkdown || t.description || '';
+          const taskObj = {
+            ...t,
+            id: newId,
+            subjectId,
+            instanceId: selectedInstanceId,
+            parentId: newParentId,
+            type: t.type || 'task',
+            title: t.title || 'Untitled Task',
+            descriptionMarkdown: descMarkdown,
+            completed: t.completed || false,
+            order: globalOrder++
+          };
+          delete taskObj.tasks;
+          delete taskObj.children;
+          delete taskObj.subsections;
+          delete taskObj.sections;
+          delete taskObj.description;
+          if (!isZipImport) {
+            delete taskObj.notesRich;
+          }
+          tasksToAdd.push(taskObj);
+        }
+      } else {
+        const importSection = (sec: any, parentId: string | null = null) => {
+          const sectionId = uuidv4();
+          const descMarkdown = sec.descriptionMarkdown || sec.description || '';
+          const taskObj = {
+            ...sec,
+            id: sectionId,
+            subjectId,
+            instanceId: selectedInstanceId,
+            parentId,
+            type: sec.type || 'section',
+            title: sec.title || 'Untitled Section',
+            descriptionMarkdown: descMarkdown,
+            completed: sec.completed || false,
+            order: globalOrder++
+          };
+          delete taskObj.tasks;
+          delete taskObj.children;
+          delete taskObj.subsections;
+          delete taskObj.sections;
+          delete taskObj.description;
+          if (!isZipImport) {
+            delete taskObj.notesRich;
+          }
+          tasksToAdd.push(taskObj);
+
+          for (const ct of (sec.tasks || sec.children || [])) {
+            const taskDescMarkdown = ct.descriptionMarkdown || ct.description || '';
+            const subTaskObj = {
+              ...ct,
+              id: uuidv4(),
+              subjectId,
+              instanceId: selectedInstanceId,
+              parentId: sectionId,
+              type: ct.type || 'task',
+              title: ct.title || 'Untitled Task',
+              descriptionMarkdown: taskDescMarkdown,
+              completed: ct.completed || false,
+              order: globalOrder++
+            };
+            delete subTaskObj.tasks;
+            delete subTaskObj.children;
+            delete subTaskObj.subsections;
+            delete subTaskObj.sections;
+            delete subTaskObj.description;
+            if (!isZipImport) {
+              delete subTaskObj.notesRich;
+            }
+            tasksToAdd.push(subTaskObj);
+          }
+          for (const subsec of (sec.subsections || [])) {
+            importSection(subsec, sectionId);
+          }
+        };
+
+        if (data.sections && Array.isArray(data.sections)) {
+          for (const sec of data.sections) importSection(sec, null);
+        }
+        if (data.tasks && Array.isArray(data.tasks)) {
+          for (const pt of data.tasks) {
+            if (pt.sections || pt.subsections || pt.tasks || pt.children) {
+              importSection(pt, null);
+            } else {
+              const taskDescMarkdown = pt.descriptionMarkdown || pt.description || '';
+              const flatTaskObj = {
+                ...pt,
+                id: uuidv4(),
+                subjectId,
+                instanceId: selectedInstanceId,
+                parentId: null,
+                type: pt.type || 'task',
+                title: pt.title || 'Untitled Task',
+                descriptionMarkdown: taskDescMarkdown,
+                completed: pt.completed || false,
+                order: globalOrder++
+              };
+              delete flatTaskObj.tasks;
+              delete flatTaskObj.children;
+              delete flatTaskObj.subsections;
+              delete flatTaskObj.sections;
+              delete flatTaskObj.description;
+              if (!isZipImport) {
+                delete flatTaskObj.notesRich;
+              }
+              tasksToAdd.push(flatTaskObj);
+            }
           }
         }
       }
@@ -273,11 +408,11 @@ export function SubjectView({ subjectId, highlightId }: { subjectId: string; hig
     if (file.name.endsWith('.zip')) {
       try {
         const data = await importSubjectZip(file);
-        if (data.tasks) processImport(JSON.stringify({ tasks: data.tasks }));
+        if (data.tasks) processImport(JSON.stringify({ tasks: data.tasks }), true);
       } catch { showToast('Failed to parse ZIP.', true); }
     } else {
       const reader = new FileReader();
-      reader.onload = (event) => processImport(event.target?.result as string);
+      reader.onload = (event) => processImport(event.target?.result as string, false);
       reader.readAsText(file);
     }
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -318,7 +453,50 @@ export function SubjectView({ subjectId, highlightId }: { subjectId: string; hig
 
   // ─── AI Prompt ─────────────────────────────────────────────────
 
-  const fullPromptText = `Generate a VALID JSON checklist for my study tracker app.\n\nSTRICT RULES:\n\nReturn ONLY raw JSON.\nDo NOT include markdown.\nDo NOT wrap in \`\`\`json.\nDo NOT explain anything.\n\nJSON structure must EXACTLY follow this schema:\n\n{\n  "sections": [\n    {\n      "title": "Section Name",\n      "subsections": [\n        {\n          "title": "Subsection Name",\n          "tasks": [\n            { "title": "Task name", "completed": false }\n          ]\n        }\n      ],\n      "tasks": [\n        { "title": "Task name", "completed": false }\n      ]\n    }\n  ]\n}\n\nREQUIREMENTS:\n- Group related topics into sections\n- Use subsections when useful\n- Keep task names concise but descriptive\n- completed must always be false\n- JSON must be syntactically valid`;
+  const fullPromptText = `Generate a VALID JSON checklist for my study tracker app.
+
+STRICT RULES:
+
+Return ONLY raw JSON.
+Do NOT include markdown formatting wrappers (no \`\`\`json).
+Do NOT explain anything.
+
+JSON structure must EXACTLY follow this schema:
+
+{
+  "sections": [
+    {
+      "title": "Section Name",
+      "description": "Section description in Markdown format (optional)",
+      "tags": ["tag1", "tag2"],
+      "subsections": [
+        {
+          "title": "Subsection Name",
+          "description": "Subsection description in Markdown format (optional)",
+          "tags": ["tag3"],
+          "tasks": [
+            { "title": "Task name", "completed": false, "description": "Task description in Markdown format (optional)", "tags": ["tag4"] }
+          ]
+        }
+      ],
+      "tasks": [
+        { "title": "Task name", "completed": false, "description": "Task description in Markdown format (optional)", "tags": ["tag5"] }
+      ]
+    }
+  ],
+  "tasks": [
+    { "title": "Root level flat task name", "completed": false, "description": "Task description in Markdown format (optional)", "tags": ["tag6"] }
+  ]
+}
+
+REQUIREMENTS:
+- Group related topics into sections
+- Use subsections when useful
+- Keep titles concise but descriptive
+- completed must always be false
+- description fields are optional but must use Markdown formatting (bold, italic, list items, etc.) if provided
+- tags fields are optional list of tags
+- JSON must be syntactically valid`;
 
   const handleCopyPrompt = async () => {
     try {
@@ -478,10 +656,10 @@ export function SubjectView({ subjectId, highlightId }: { subjectId: string; hig
             </Reorder.Group>
 
             <div className="mt-8 flex items-center gap-4 flex-wrap">
-              <button onClick={() => db.tasks.add({ id: uuidv4(), subjectId, instanceId: selectedInstanceId, parentId: null, type: 'task', title: '', description: '', notes: '', completed: false, order: tasks.length })} className="flex items-center gap-2 text-[13px] font-medium text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] px-4 py-2 bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-full shadow-sm hover:shadow-md transition-all">
+              <button onClick={() => db.tasks.add({ id: uuidv4(), subjectId, instanceId: selectedInstanceId, parentId: null, type: 'task', title: '', descriptionMarkdown: '', completed: false, order: tasks.length })} className="flex items-center gap-2 text-[13px] font-medium text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] px-4 py-2 bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-full shadow-sm hover:shadow-md transition-all">
                 <Plus size={16} /> Add Task
               </button>
-              <button onClick={() => db.tasks.add({ id: uuidv4(), subjectId, instanceId: selectedInstanceId, parentId: null, type: 'section', title: '', description: '', notes: '', completed: false, order: tasks.length })} className="flex items-center gap-2 text-[13px] font-medium text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] px-4 py-2 border border-transparent hover:border-[hsl(var(--primary)/0.3)] rounded-full transition-all">
+              <button onClick={() => db.tasks.add({ id: uuidv4(), subjectId, instanceId: selectedInstanceId, parentId: null, type: 'section', title: '', descriptionMarkdown: '', completed: false, order: tasks.length })} className="flex items-center gap-2 text-[13px] font-medium text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] px-4 py-2 border border-transparent hover:border-[hsl(var(--primary)/0.3)] rounded-full transition-all">
                 <Plus size={16} /> Add Section
               </button>
             </div>
@@ -521,6 +699,10 @@ export function SubjectView({ subjectId, highlightId }: { subjectId: string; hig
                     </div>
                   </div>
                   <div className="p-6 flex flex-col gap-4">
+                    <div className="p-3.5 rounded-xl bg-orange-500/10 border border-orange-500/30 text-orange-600 dark:text-orange-400 text-xs flex gap-2">
+                      <Info size={16} className="shrink-0 mt-0.5" />
+                      <span><strong>Warning:</strong> Quick JSON import excludes advanced notes, media, and images. Use ZIP import for a full backup.</span>
+                    </div>
                     {importTab === 'paste' ? (
                       <textarea value={pasteData} onChange={e => setPasteData(e.target.value)} placeholder="Paste subject JSON here..." className="w-full h-48 bg-[hsl(var(--background))] border border-[hsl(var(--border))] rounded-xl p-3 text-sm font-mono focus:border-[hsl(var(--primary))] outline-none resize-none text-[hsl(var(--foreground))]" />
                     ) : (
@@ -572,6 +754,38 @@ export function SubjectView({ subjectId, highlightId }: { subjectId: string; hig
               <div className="flex gap-3 justify-end">
                 <button onClick={() => { setShowDeleteSubjectModal(false); setDeleteSubjectConfirm(''); }} className="px-4 py-2 rounded-xl hover:bg-[hsl(var(--muted))] text-sm font-medium text-[hsl(var(--foreground))]">Cancel</button>
                 <button onClick={handleConfirmDeleteSubject} disabled={deleteSubjectConfirm !== 'DELETE SUBJECT'} className="px-5 py-2 rounded-xl bg-red-500 text-white text-sm font-medium disabled:opacity-50">Delete Subject</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Export Warning Modal */}
+      <AnimatePresence>
+        {showExportWarning && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowExportWarning(null)}>
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="w-full max-w-md bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-2xl shadow-xl p-6" onClick={e => e.stopPropagation()}>
+              <h2 className="text-xl font-semibold mb-2 text-amber-500 flex items-center gap-2">
+                <Info className="text-amber-500" /> Export Warning
+              </h2>
+              <p className="text-sm text-[hsl(var(--muted-foreground))] mb-6">
+                Quick JSON export excludes advanced notes, images, and media. To keep all content, use the <strong>ZIP export</strong> instead.
+              </p>
+              <div className="flex gap-3 justify-end">
+                <button onClick={() => setShowExportWarning(null)} className="px-4 py-2 rounded-xl hover:bg-[hsl(var(--muted))] text-sm font-medium text-[hsl(var(--foreground))]">Cancel</button>
+                <button 
+                  onClick={() => {
+                    if (showExportWarning.action === 'copy') {
+                      handleCopyJSONDirect();
+                    } else {
+                      handleDownloadJSONDirect();
+                    }
+                    setShowExportWarning(null);
+                  }} 
+                  className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium"
+                >
+                  Proceed with JSON Export
+                </button>
               </div>
             </motion.div>
           </motion.div>
@@ -790,11 +1004,11 @@ function SectionNode({ section, allTasks, isStructureLocked, level = 0, settings
               {!isStructureLocked && (
                 <div className="flex items-center gap-2 mt-1">
                   {level === 0 && (
-                    <button onClick={() => db.tasks.add({ id: uuidv4(), subjectId: section.subjectId, instanceId: section.instanceId, parentId: section.id, type: 'section', title: '', description: '', notes: '', completed: false, order: children.length })} className="text-[hsl(var(--muted-foreground))] text-sm py-2 px-3 hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))] rounded-lg flex items-center gap-2 transition-colors">
+                    <button onClick={() => db.tasks.add({ id: uuidv4(), subjectId: section.subjectId, instanceId: section.instanceId, parentId: section.id, type: 'section', title: '', descriptionMarkdown: '', completed: false, order: children.length })} className="text-[hsl(var(--muted-foreground))] text-sm py-2 px-3 hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))] rounded-lg flex items-center gap-2 transition-colors">
                       <Plus size={14} /> Add subsection
                     </button>
                   )}
-                  <button onClick={() => db.tasks.add({ id: uuidv4(), subjectId: section.subjectId, instanceId: section.instanceId, parentId: section.id, type: 'task', title: '', description: '', notes: '', completed: false, tags: [], order: children.length })} className="text-[hsl(var(--muted-foreground))] text-sm py-2 px-3 hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))] rounded-lg flex items-center gap-2 transition-colors">
+                  <button onClick={() => db.tasks.add({ id: uuidv4(), subjectId: section.subjectId, instanceId: section.instanceId, parentId: section.id, type: 'task', title: '', descriptionMarkdown: '', completed: false, tags: [], order: children.length })} className="text-[hsl(var(--muted-foreground))] text-sm py-2 px-3 hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))] rounded-lg flex items-center gap-2 transition-colors">
                     <Plus size={14} /> Add task
                   </button>
                 </div>
@@ -816,8 +1030,8 @@ function SectionNode({ section, allTasks, isStructureLocked, level = 0, settings
                 <MenuBtn onClick={() => { setShowBottomSheet(false); if (!isStructureLocked) { inputRef.current?.focus(); } }}>Rename</MenuBtn>
                 {!isStructureLocked && (
                   <>
-                    <MenuBtn onClick={() => { db.tasks.add({ id: uuidv4(), subjectId: section.subjectId, instanceId: section.instanceId, parentId: section.id, type: 'task', title: '', description: '', notes: '', completed: false, tags: [], order: children.length }); setShowBottomSheet(false); }} icon={<Plus size={16} />}>Add Task</MenuBtn>
-                    <MenuBtn onClick={() => { db.tasks.add({ id: uuidv4(), subjectId: section.subjectId, instanceId: section.instanceId, parentId: section.id, type: 'section', title: '', description: '', notes: '', completed: false, order: children.length }); setShowBottomSheet(false); }} icon={<Plus size={16} />}>Add Subsection</MenuBtn>
+                    <MenuBtn onClick={() => { db.tasks.add({ id: uuidv4(), subjectId: section.subjectId, instanceId: section.instanceId, parentId: section.id, type: 'task', title: '', descriptionMarkdown: '', completed: false, tags: [], order: children.length }); setShowBottomSheet(false); }} icon={<Plus size={16} />}>Add Task</MenuBtn>
+                    <MenuBtn onClick={() => { db.tasks.add({ id: uuidv4(), subjectId: section.subjectId, instanceId: section.instanceId, parentId: section.id, type: 'section', title: '', descriptionMarkdown: '', completed: false, order: children.length }); setShowBottomSheet(false); }} icon={<Plus size={16} />}>Add Subsection</MenuBtn>
                     <MenuBtn onClick={duplicateSection} icon={<Copy size={16} />}>Duplicate</MenuBtn>
                     <MenuBtn onClick={() => { onCascadeDelete(section.id); setShowBottomSheet(false); }} className="text-red-500" icon={<Trash2 size={16} />}>Delete</MenuBtn>
                   </>
@@ -853,42 +1067,7 @@ function TaskNode({ task, isStructureLocked, settings, subjectId }: any) {
 
   useEffect(() => { setTitle(task.title); }, [task.title]);
 
-  // Click outside to collapse
-  useEffect(() => {
-    if (!isExpanded) return;
-    const handleClickOutside = (e: Event) => {
-      const target = e.target as HTMLElement;
-      if (!target) return;
 
-      // If the target element has been unmounted/detached from the DOM during re-renders,
-      // it was almost certainly inside the editor/task. Do not close.
-      if (!document.body.contains(target)) return;
-
-      // Don't close if clicking inside this task container itself
-      if (taskRef.current?.contains(target)) return;
-
-      // Don't close if clicking inside a task bottom sheet
-      if (target.closest('.task-bottom-sheet')) return;
-
-      // Don't close if clicking inside a rich editor portal (like fullscreen mode)
-      if (target.closest('[data-rich-editor-portal="true"]')) return;
-
-      // Otherwise, close it
-      setTaskExpanded(subjectId, task.id, false);
-    };
-    
-    // Register touch and mouse events after a small delay
-    const timer = setTimeout(() => {
-      document.addEventListener('mousedown', handleClickOutside);
-      document.addEventListener('touchstart', handleClickOutside);
-    }, 100);
-
-    return () => {
-      clearTimeout(timer);
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('touchstart', handleClickOutside);
-    };
-  }, [isExpanded, subjectId, task.id, setTaskExpanded]);
 
   const toggleCompleted = () => {
     const newCompleted = !completed;
@@ -933,8 +1112,10 @@ function TaskNode({ task, isStructureLocked, settings, subjectId }: any) {
 
     const now = Date.now();
     if (now - lastTapRef.current < 300) {
-      // double tap
-      toggleTaskExpanded(subjectId, task.id);
+      // double tap: only open description, never close it
+      if (!isExpanded) {
+        setTaskExpanded(subjectId, task.id, true);
+      }
       lastTapRef.current = 0;
       cancelPointer();
       return;
@@ -960,12 +1141,16 @@ function TaskNode({ task, isStructureLocked, settings, subjectId }: any) {
     ) {
       return;
     }
+    // If already expanded, clicking row should NOT close it
+    if (isExpanded) {
+      return;
+    }
     if (isStructureLocked) {
-      toggleTaskExpanded(subjectId, task.id);
+      setTaskExpanded(subjectId, task.id, true);
     } else {
       // Only toggle if not clicking on the title input
       if (!target.closest('input')) {
-        toggleTaskExpanded(subjectId, task.id);
+        setTaskExpanded(subjectId, task.id, true);
       }
     }
   };
@@ -989,7 +1174,14 @@ function TaskNode({ task, isStructureLocked, settings, subjectId }: any) {
         >
           {!isStructureLocked && <div className="mt-1.5 cursor-grab text-[hsl(var(--muted-foreground))] opacity-60 md:opacity-0 md:group-hover:opacity-100 shrink-0"><GripVertical size={14} /></div>}
 
-          <div className="mt-1 shrink-0">
+          <div 
+            className="mt-1 shrink-0 premium-checkbox p-2 -m-2 select-none"
+            onClick={e => e.stopPropagation()}
+            onPointerDown={e => e.stopPropagation()}
+            onMouseDown={e => e.stopPropagation()}
+            onPointerUp={e => e.stopPropagation()}
+            onMouseUp={e => e.stopPropagation()}
+          >
             <PremiumCheckbox checked={completed} onChange={toggleCompleted} variant={checkmarkStyle} />
           </div>
 
@@ -1043,13 +1235,66 @@ function TaskNode({ task, isStructureLocked, settings, subjectId }: any) {
                   <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] flex items-center gap-1.5"><AlignLeft size={14} /> Description</label>
                   <div className="mt-1">
                     <RichEditor
-                      key={task.id}
-                      initialContent={task.description || ''}
-                      onSave={jsonContent => db.tasks.update(task.id, { description: jsonContent })}
+                      key={task.id + '-desc'}
+                      initialContent={task.descriptionMarkdown || ''}
+                      onSave={markdownContent => db.tasks.update(task.id, { descriptionMarkdown: markdownContent })}
                       readOnly={false}
+                      mode="markdown"
                     />
                   </div>
                 </div>
+
+                {task.notesRich ? (
+                  <div className="flex flex-col gap-1.5 border-t border-[hsl(var(--border))] pt-4">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] flex items-center gap-1.5">
+                        <FileText size={14} /> Advanced Notes (Media-Rich)
+                      </label>
+                      <button
+                        onClick={async () => {
+                          if (window.confirm("Are you sure you want to delete advanced notes? This will permanently remove all media and images inside them.")) {
+                            await db.tasks.update(task.id, { notesRich: null });
+                          }
+                        }}
+                        className="text-xs text-red-500 hover:text-red-600 transition-colors flex items-center gap-1 font-medium cursor-pointer"
+                      >
+                        <Trash2 size={12} /> Delete Notes
+                      </button>
+                    </div>
+                    <div className="mt-1">
+                      <RichEditor
+                        key={task.id + '-notes'}
+                        initialContent={task.notesRich.content ? JSON.stringify(task.notesRich.content) : ''}
+                        onSave={jsonString => {
+                          try {
+                            const parsed = JSON.parse(jsonString);
+                            db.tasks.update(task.id, { notesRich: { type: 'rich', content: parsed } });
+                          } catch (e) {
+                            console.error('Failed to parse notes Rich editor state', e);
+                          }
+                        }}
+                        readOnly={false}
+                        mode="rich"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="pt-2">
+                    <button
+                      onClick={() => {
+                        db.tasks.update(task.id, { 
+                          notesRich: { 
+                            type: 'rich', 
+                            content: { type: 'doc', content: [{ type: 'paragraph' }] } 
+                          } 
+                        });
+                      }}
+                      className="text-xs font-semibold text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/0.1)] border border-[hsl(var(--primary)/0.3)] rounded-lg px-3 py-1.5 flex items-center gap-1.5 transition-colors cursor-pointer w-fit"
+                    >
+                      <Plus size={14} /> Add Advanced Notes
+                    </button>
+                  </div>
+                )}
 
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] flex items-center gap-1.5"><Tag size={14} /> Tags</label>
