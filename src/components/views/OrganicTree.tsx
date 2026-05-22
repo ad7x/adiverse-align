@@ -15,6 +15,9 @@ interface TreeNode {
   y: number;
   radius: number;
   depth: number;
+  // Navigation metadata
+  parentSubjectId?: string;
+  parentDomainId?: string;
 }
 
 interface Particle {
@@ -118,7 +121,9 @@ export function OrganicTree() {
       const node: TreeNode = {
         id: s.id, type: 'subject', name: s.title,
         progress: { completed: 0, total: 0 },
-        children: [], x: 0, y: 0, radius: 0, depth: 3
+        children: [], x: 0, y: 0, radius: 0, depth: 3,
+        parentSubjectId: s.id, // subject itself is its own anchor
+        parentDomainId: s.domainId,
       };
       subMap.set(s.id, node);
       const parent = domMap.get(s.domainId);
@@ -131,13 +136,15 @@ export function OrganicTree() {
       const node: TreeNode = {
         id: sec.id, type: 'section', name: sec.title || 'Section',
         progress: { completed: 0, total: 0 },
-        children: [], x: 0, y: 0, radius: 0, depth: 4
+        children: [], x: 0, y: 0, radius: 0, depth: 4,
+        parentSubjectId: sec.subjectId,
       };
       secMap.set(sec.id, node);
       // If the section has a parent section, it's a subsection
       if (sec.parentId && secMap.has(sec.parentId)) {
         const parentSec = secMap.get(sec.parentId)!;
         node.depth = parentSec.depth + 1;
+        node.parentSubjectId = parentSec.parentSubjectId;
         parentSec.children.push(node);
       } else {
         const parent = subMap.get(sec.subjectId);
@@ -150,11 +157,13 @@ export function OrganicTree() {
       const node: TreeNode = {
         id: t.id, type: 'task', name: t.title || 'Task',
         progress: { completed: t.completed ? 1 : 0, total: 1 },
-        children: [], x: 0, y: 0, radius: 0, depth: 5
+        children: [], x: 0, y: 0, radius: 0, depth: 5,
+        parentSubjectId: t.subjectId,
       };
       if (t.parentId && secMap.has(t.parentId)) {
         const parent = secMap.get(t.parentId)!;
         node.depth = parent.depth + 1;
+        node.parentSubjectId = parent.parentSubjectId;
         parent.children.push(node);
       } else {
         const parent = subMap.get(t.subjectId);
@@ -182,6 +191,19 @@ export function OrganicTree() {
     root.x = trunkX;
     root.y = trunkY;
 
+    // Count nodes to scale trunk proportionally
+    const countNodes = (n: TreeNode): number => 1 + n.children.reduce((sum, c) => sum + countNodes(c), 0);
+    const totalNodes = countNodes(root);
+
+    // Trunk top: where all category branches originate
+    const sizeScale = Math.min(0.25, Math.log10(Math.max(1, totalNodes)) * 0.1);
+    const trunkLength = Math.min(w, h) * (0.12 + sizeScale);
+    const trunkTopX = trunkX;
+    const trunkTopY = trunkY - trunkLength;
+    // Store trunk top on root for drawing
+    (root as TreeNode & { trunkTopX?: number; trunkTopY?: number }).trunkTopX = trunkTopX;
+    (root as TreeNode & { trunkTopX?: number; trunkTopY?: number }).trunkTopY = trunkTopY;
+
     const flatNodes: TreeNode[] = [];
 
     const layout = (node: TreeNode, x: number, y: number, angle: number, spread: number, len: number) => {
@@ -206,11 +228,19 @@ export function OrganicTree() {
         const cLen = childLen * (0.92 + seededRandom(seed + 1) * 0.16);
         const nx = x + Math.cos(childAngle) * cLen;
         const ny = y + Math.sin(childAngle) * cLen;
-        layout(child, nx, ny, childAngle, childSpread, cLen);
+        
+        // Bias the angle for the next level upwards so branches grow up like a real tree
+        // -Math.PI / 2 is straight up. We blend 40% of the actual angle and 60% of straight up.
+        const nextAngle = childAngle * 0.4 + (-Math.PI / 2) * 0.6;
+        layout(child, nx, ny, nextAngle, childSpread, cLen);
       });
     };
 
-    layout(root, trunkX, trunkY, -Math.PI / 2, Math.PI * 0.85, Math.min(w, h) * 0.22);
+    // Layout root at trunkTop position so all branches start from trunk tip
+    layout(root, trunkTopX, trunkTopY, -Math.PI / 2, Math.PI * 0.85, Math.min(w, h) * 0.22);
+    // But keep root's visual position at the actual bottom
+    root.x = trunkX;
+    root.y = trunkY;
     flatNodesRef.current = flatNodes;
   }, []);
 
@@ -263,11 +293,19 @@ export function OrganicTree() {
       // ─── Draw glowing roots ────────────────────────────────
       const rootX = tree.x;
       const rootY = tree.y;
-      const rootCount = 7;
+      const treeWithTrunk = tree as TreeNode & { trunkTopX?: number; trunkTopY?: number };
+      const trunkTopX = treeWithTrunk.trunkTopX ?? rootX;
+      const trunkTopY = treeWithTrunk.trunkTopY ?? rootY - 100;
+
+      const totalNodes = flatNodesRef.current.length;
+      const nodeScale = Math.min(1, Math.log10(Math.max(1, totalNodes)) / 2.5); // 0 to ~1
+
+      const rootCount = Math.floor(7 + nodeScale * 15); // 7 to 22 root hairs
       for (let i = 0; i < rootCount; i++) {
         const seed = seededRandom(i * 37);
-        const angle = Math.PI * 0.15 + (i / (rootCount - 1)) * Math.PI * 0.7;
-        const len = 40 + seed * 40;
+        const angle = Math.PI * 0.15 + (i / Math.max(1, rootCount - 1)) * Math.PI * 0.7;
+        const baseLen = 40 + nodeScale * 50; 
+        const len = baseLen + seed * baseLen;
         ctx.beginPath();
         ctx.moveTo(rootX, rootY);
         const ex = rootX + Math.cos(angle) * len;
@@ -276,43 +314,79 @@ export function OrganicTree() {
         const cy = rootY + Math.sin(angle) * len * 0.5;
         ctx.quadraticCurveTo(cx, cy, ex, ey);
         ctx.strokeStyle = `hsl(${primaryHSL} / 0.25)`;
-        ctx.lineWidth = 3 - i * 0.3;
-        ctx.shadowBlur = 12;
+        
+        const edgeFade = 1 - Math.abs(i - (rootCount - 1) / 2) / ((rootCount - 1) / 2);
+        ctx.lineWidth = (3 + nodeScale * 3) * (0.4 + 0.6 * edgeFade) / t.scale;
+        ctx.shadowBlur = 12 / t.scale;
         ctx.shadowColor = `hsl(${primaryHSL} / 0.4)`;
         ctx.stroke();
         ctx.shadowBlur = 0;
       }
 
+      // ─── Draw main trunk ──────────────────────────────────
+      const trunkRatio = tree.progress.total > 0 ? tree.progress.completed / tree.progress.total : 0;
+      
+      ctx.beginPath();
+      ctx.moveTo(rootX, rootY);
+      // Slight organic curve for the trunk too
+      ctx.quadraticCurveTo(rootX + 15, (rootY + trunkTopY) / 2, trunkTopX, trunkTopY);
+      
+      // Relative width: noticeably thicker than normal branches. Scales with tree size.
+      const trunkWidth = 14 + Math.min(24, Math.log10(Math.max(1, totalNodes)) * 10);
+      ctx.lineWidth = trunkWidth / t.scale;
+      ctx.lineCap = 'round';
+      if (trunkRatio > 0.05) {
+        ctx.strokeStyle = `hsl(${primaryHSL} / ${0.3 + trunkRatio * 0.5})`;
+        ctx.shadowBlur = 10 * trunkRatio / t.scale;
+        ctx.shadowColor = `hsl(${primaryHSL} / 0.5)`;
+      } else {
+        ctx.strokeStyle = 'hsl(240 5% 20%)';
+        ctx.shadowBlur = 0;
+      }
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Trunk top knot — a node-like circle at the branching point
+      ctx.beginPath();
+      ctx.arc(trunkTopX, trunkTopY, 7, 0, Math.PI * 2);
+      if (trunkRatio > 0.05) {
+        ctx.fillStyle = `hsl(${primaryHSL} / ${0.4 + trunkRatio * 0.4})`;
+        ctx.shadowBlur = 12 * trunkRatio;
+        ctx.shadowColor = `hsl(${primaryHSL} / 0.6)`;
+      } else {
+        ctx.fillStyle = 'hsl(240 5% 22%)';
+      }
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
       // ─── Draw branches (connections) ───────────────────────
+      // For root's children (categories), draw from trunkTop not from root
       const drawBranches = (node: TreeNode) => {
+        const isRoot = node.type === 'root';
+        const fromX = isRoot ? trunkTopX : node.x;
+        const fromY = isRoot ? trunkTopY : node.y;
         for (const child of node.children) {
           ctx.beginPath();
-          ctx.moveTo(node.x, node.y);
+          ctx.moveTo(fromX, fromY);
 
-          // Organic bezier curves
-          const dx = child.x - node.x;
-          const dy = child.y - node.y;
-          const dist = Math.hypot(dx, dy);
-          const mx = node.x + dx * 0.5;
-          const my = node.y + dy * 0.5;
-          const perpX = -dy / dist;
-          const perpY = dx / dist;
-          const bend = (seededRandom(hashStr(child.id)) - 0.5) * dist * 0.15;
-          const cpx = mx + perpX * bend;
-          const cpy = my + perpY * bend;
+          // Slight upward arch — quadratic bezier with control point just above midpoint
+          // Very subtle: only 5% of distance above the straight line
+          const dist = Math.hypot(child.x - fromX, child.y - fromY);
+          const midX = (fromX + child.x) / 2;
+          const midY = (fromY + child.y) / 2 - dist * 0.05;
 
-          ctx.quadraticCurveTo(cpx, cpy, child.x, child.y);
+          ctx.quadraticCurveTo(midX, midY, child.x, child.y);
 
-          // Branch thickness decreases with depth
-          const thickness = Math.max(1, 14 - child.depth * 2.2);
-          ctx.lineWidth = thickness;
+          // Branch thickness in screen-space (doesn't grow on zoom)
+          const thickness = Math.max(0.8, 13 - child.depth * 2.0);
+          ctx.lineWidth = thickness / t.scale;
           ctx.lineCap = 'round';
 
           // Color based on progress
           const ratio = node.progress.total > 0 ? node.progress.completed / node.progress.total : 0;
           if (ratio > 0.05) {
             ctx.strokeStyle = `hsl(${primaryHSL} / ${0.15 + ratio * 0.55})`;
-            ctx.shadowBlur = 6 * ratio;
+            ctx.shadowBlur = 6 * ratio / t.scale;
             ctx.shadowColor = `hsl(${primaryHSL} / 0.5)`;
           } else {
             ctx.strokeStyle = 'hsl(240 5% 18%)';
@@ -325,6 +399,7 @@ export function OrganicTree() {
         }
       };
       drawBranches(tree);
+
 
       // ─── Draw nodes (LOD: skip deep nodes when zoomed out) ─
       const zoomThreshold = t.scale;
@@ -501,9 +576,7 @@ export function OrganicTree() {
   }, []);
 
   const handleNodeClick = useCallback((e: React.MouseEvent) => {
-    if (dragged.current) {
-      return;
-    }
+    if (dragged.current) return;
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
 
@@ -515,7 +588,6 @@ export function OrganicTree() {
     let closestDist = Infinity;
     for (const node of flatNodesRef.current) {
       const dist = Math.hypot(node.x - cx, node.y - cy);
-      // touch-target radius: Math.max(node.radius * 2.5, 24 / t.scale)
       const hitRadius = Math.max(node.radius * 2.5, 24 / t.scale);
       if (dist < hitRadius && dist < closestDist) {
         closest = node;
@@ -523,8 +595,18 @@ export function OrganicTree() {
       }
     }
 
-    if (closest && closest.type === 'subject') {
+    if (!closest) return;
+
+    if (closest.type === 'subject') {
       setActiveView({ type: 'subject', subjectId: closest.id });
+    } else if ((closest.type === 'task' || closest.type === 'section') && closest.parentSubjectId) {
+      // Navigate to the subject that contains this task/section
+      setActiveView({ type: 'subject', subjectId: closest.parentSubjectId });
+    } else if (closest.type === 'domain' && closest.parentDomainId) {
+      // Navigate to home (domain-level nav not yet in router — open first subject of domain)
+      setActiveView({ type: 'home' });
+    } else if (closest.type === 'category') {
+      setActiveView({ type: 'home' });
     }
   }, [setActiveView]);
 
