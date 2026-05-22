@@ -91,4 +91,6 @@ export type ViewState =
   | { type: 'home' }
   | { type: 'search'; initialQuery?: string }
   | { type: 'settings' }
+  | { type: 'tags' }
   | { type: 'subject'; subjectId: string; highlightId?: string };
+

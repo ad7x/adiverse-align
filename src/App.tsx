@@ -5,6 +5,7 @@ import { HomeView } from './components/views/HomeView';
 import { SubjectView } from './components/views/SubjectView';
 import { SettingsView } from './components/views/SettingsView';
 import { SearchView } from './components/views/SearchView';
+import { TagsView } from './components/views/TagsView';
 import { OnboardingModal } from './components/common/OnboardingModal';
 import { db } from './db';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -135,6 +136,7 @@ export default function App() {
           {activeView.type === 'home' && <HomeView />}
           {activeView.type === 'settings' && <SettingsView />}
           {activeView.type === 'search' && <SearchView />}
+          {activeView.type === 'tags' && <TagsView />}
           {activeView.type === 'subject' && <SubjectView subjectId={activeView.subjectId} highlightId={activeView.highlightId} />}
         </div>
       </AppLayout>

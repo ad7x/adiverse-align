@@ -19,6 +19,7 @@ export function SettingsView() {
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [importPasteData, setImportPasteData] = useState('');
   const [catOrder, setCatOrder] = useState<any[]>([]);
+  const [isEditingName, setIsEditingName] = useState(false);
 
   useEffect(() => {
     if (settings) setUserName(settings.userName);
@@ -32,6 +33,7 @@ export function SettingsView() {
     if (settings && userName.trim()) {
       db.settings.update('settings', { userName: userName.trim() });
     }
+    setIsEditingName(false);
   };
 
   const toggleTheme = async () => {
@@ -52,6 +54,8 @@ export function SettingsView() {
 
   const [resetChecklistConfirm, setResetChecklistConfirm] = useState('');
   const [deleteWorkspaceConfirm, setDeleteWorkspaceConfirm] = useState('');
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [importMode, setImportMode] = useState<'replace' | 'merge'>('replace');
   const [showExportWarning, setShowExportWarning] = useState<{ action: 'copy' | 'download' } | null>(null);
 
@@ -196,22 +200,63 @@ export function SettingsView() {
   const globalStructureLock = settings?.globalLock;
 
   return (
-    <div className="h-full w-full flex flex-col p-8 lg:p-16 max-w-4xl mx-auto overflow-y-auto custom-scrollbar">
-      <h1 className="text-3xl font-semibold mb-10 tracking-tight">Settings</h1>
+    <div className="h-full w-full overflow-y-auto custom-scrollbar text-[hsl(var(--foreground))]">
+      <div className="flex flex-col p-4 sm:p-8 lg:p-16 max-w-4xl mx-auto w-full">
+        <h1 className="text-3xl font-semibold mb-10 tracking-tight">Settings</h1>
 
-      <div className="space-y-12 pb-20">
+        <div className="space-y-12 pb-20">
         <section>
           <h2 className="text-sm font-semibold uppercase tracking-widest text-[hsl(var(--primary))] mb-4">Profile</h2>
           <div className="bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-2xl p-6 shadow-sm flex flex-col gap-4">
-            <div className="flex items-center gap-4">
-              <UserCircle size={28} className="text-[hsl(var(--muted-foreground))]" />
-              <div className="flex-1 flex gap-4">
-                <input 
-                  value={userName} onChange={e => setUserName(e.target.value)} placeholder="Your Name"
-                  className="bg-transparent border-b border-[hsl(var(--border))] outline-none font-medium px-2 py-1 flex-1 text-lg"
-                />
-                <button onClick={saveUserName} className="px-4 py-2 bg-[hsl(var(--primary))] text-white rounded-lg font-medium text-sm">Save</button>
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-4 flex-1 min-w-0">
+                <div className="p-3 bg-[hsl(var(--muted))] rounded-full shrink-0 flex items-center justify-center">
+                  <UserCircle size={24} className="text-[hsl(var(--primary))]" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  {isEditingName ? (
+                    <input 
+                      value={userName} 
+                      onChange={e => setUserName(e.target.value)} 
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') saveUserName();
+                        if (e.key === 'Escape') {
+                          if (settings) setUserName(settings.userName);
+                          setIsEditingName(false);
+                        }
+                      }}
+                      placeholder="Your Name"
+                      autoFocus
+                      className="bg-transparent border-b-2 border-[hsl(var(--primary))] outline-none font-bold px-1 py-0.5 w-full text-xl text-[hsl(var(--foreground))] transition-all focus:border-[hsl(var(--primary))]"
+                    />
+                  ) : (
+                    <span 
+                      onClick={() => setIsEditingName(true)}
+                      className="font-bold text-2xl tracking-tight bg-gradient-to-r from-[hsl(var(--foreground))] to-[hsl(var(--foreground)/0.75)] bg-clip-text text-transparent px-1 py-0.5 select-none hover:opacity-80 transition-opacity cursor-pointer block truncate"
+                    >
+                      {userName || 'Set Your Name'}
+                    </span>
+                  )}
+                </div>
               </div>
+              
+              <button 
+                onClick={() => {
+                  if (isEditingName) {
+                    saveUserName();
+                  } else {
+                    setIsEditingName(true);
+                  }
+                }}
+                title={isEditingName ? "Save Name" : "Edit Name"}
+                className={`p-3 rounded-xl transition-all flex items-center justify-center shrink-0 ${
+                  isEditingName 
+                    ? 'bg-[hsl(var(--primary))] text-white hover:bg-[hsl(var(--primary)/0.9)] shadow-lg shadow-[hsl(var(--primary)/0.25)]' 
+                    : 'bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--border))]'
+                }`}
+              >
+                {isEditingName ? <CheckSquare size={20} /> : <Pencil size={20} />}
+              </button>
             </div>
           </div>
         </section>
@@ -219,28 +264,28 @@ export function SettingsView() {
         <section>
           <h2 className="text-sm font-semibold uppercase tracking-widest text-[hsl(var(--primary))] mb-4">Appearance</h2>
           <div className="bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-2xl shadow-sm flex flex-col divide-y divide-[hsl(var(--border))]">
-            <div className="p-6 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-[hsl(var(--muted))] rounded-full">{settings?.theme === 'dark' ? <Moon size={20} /> : <Sun size={20} />}</div>
+            <div className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-start sm:items-center gap-4">
+                <div className="p-3 bg-[hsl(var(--muted))] rounded-full shrink-0">{settings?.theme === 'dark' ? <Moon size={20} /> : <Sun size={20} />}</div>
                 <div>
                   <div className="font-medium text-lg">Theme Mode</div>
                   <div className="text-sm text-[hsl(var(--muted-foreground))]">Deep Dark / Elegant Light</div>
                 </div>
               </div>
-              <button onClick={toggleTheme} className="px-6 py-2 rounded-xl bg-[hsl(var(--muted))] hover:bg-[hsl(var(--border))] transition-colors text-sm font-medium">
+              <button onClick={toggleTheme} className="w-full sm:w-auto px-6 py-2 rounded-xl bg-[hsl(var(--muted))] hover:bg-[hsl(var(--border))] transition-colors text-sm font-medium whitespace-nowrap self-start sm:self-auto text-center">
                 Toggle
               </button>
             </div>
             
-            <div className="p-6 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-[hsl(var(--muted))] rounded-full"><Palette size={20} /></div>
+            <div className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-start sm:items-center gap-4">
+                <div className="p-3 bg-[hsl(var(--muted))] rounded-full shrink-0"><Palette size={20} /></div>
                 <div>
                   <div className="font-medium text-lg">Theme Color</div>
                   <div className="text-sm text-[hsl(var(--muted-foreground))]">Accent color for your workspace</div>
                 </div>
               </div>
-              <div className="flex bg-[hsl(var(--muted))] p-1 rounded-xl">
+              <div className="flex bg-[hsl(var(--muted))] p-1 rounded-xl gap-0.5 justify-center self-center sm:self-auto flex-wrap">
                 {THEME_COLORS.map(color => (
                   <button 
                     key={color}
@@ -260,28 +305,26 @@ export function SettingsView() {
               </div>
             </div>
 
-            <div className="p-6 flex flex-col gap-6">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-[hsl(var(--muted))] rounded-full"><CheckSquare size={20} /></div>
+            <div className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-start sm:items-center gap-4">
+                <div className="p-3 bg-[hsl(var(--muted))] rounded-full shrink-0"><CheckSquare size={20} /></div>
                 <div>
                   <div className="font-medium text-lg">Checkbox Style</div>
-                  <div className="text-sm text-[hsl(var(--muted-foreground))]">Select your preferred completion animation and shape</div>
+                  <div className="text-sm text-[hsl(var(--muted-foreground))]">Select completion animation and shape</div>
                 </div>
               </div>
               
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              <div className="flex bg-[hsl(var(--muted))] p-1 rounded-xl items-center gap-0.5 justify-center self-center sm:self-auto flex-wrap">
                 {(['modern', 'circle-glow', 'neon', 'minimal', 'gradient'] as const).map(style => (
                   <button 
                     key={style}
                     onClick={() => db.settings.update('settings', { checkmarkStyle: style })}
-                    className={`flex flex-col items-center gap-3 p-4 rounded-2xl border-2 transition-all ${settings?.checkmarkStyle === style || (!settings?.checkmarkStyle && style === 'modern') ? 'border-[hsl(var(--primary))] bg-[hsl(var(--primary)/0.05)] shadow-lg' : 'border-[hsl(var(--border))] hover:border-[hsl(var(--primary)/0.5)] hover:bg-[hsl(var(--muted)/0.3)]'}`}
+                    title={style.replace('-', ' ')}
+                    className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all ${settings?.checkmarkStyle === style || (!settings?.checkmarkStyle && style === 'modern') ? 'bg-[hsl(var(--card))] border border-[hsl(var(--primary))] shadow-sm scale-110 z-10' : 'opacity-70 hover:opacity-100 hover:bg-[hsl(var(--card)/0.4)]'}`}
                   >
-                    <div className="pointer-events-none scale-125 mb-1">
-                      <PremiumCheckbox checked={true} onChange={() => {}} variant={style} />
+                    <div className="pointer-events-none scale-75">
+                      <PremiumCheckbox checked={true} onChange={() => {}} variant={style} size={24} />
                     </div>
-                    <span className="text-xs font-semibold uppercase tracking-wider text-[hsl(var(--foreground))] text-center">
-                      {style.replace('-', ' ')}
-                    </span>
                   </button>
                 ))}
               </div>
@@ -292,9 +335,9 @@ export function SettingsView() {
         <section>
           <h2 className="text-sm font-semibold uppercase tracking-widest text-[hsl(var(--primary))] mb-4">Interactions & Feedback</h2>
           <div className="bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-2xl shadow-sm flex flex-col divide-y divide-[hsl(var(--border))]">
-            <div className="p-6 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-[hsl(var(--muted))] rounded-full"><Volume2 size={20} /></div>
+            <div className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-start sm:items-center gap-4">
+                <div className="p-3 bg-[hsl(var(--muted))] rounded-full shrink-0"><Volume2 size={20} /></div>
                 <div>
                   <div className="font-medium text-lg">Chime Sound</div>
                   <div className="text-sm text-[hsl(var(--muted-foreground))]">Play a rewarding sound on task completion</div>
@@ -302,7 +345,7 @@ export function SettingsView() {
               </div>
               <button 
                 onClick={() => db.settings.update('settings', { soundEnabled: !(settings?.soundEnabled ?? true) })}
-                className={`px-6 py-2 rounded-xl text-sm font-medium transition-colors ${
+                className={`w-full sm:w-auto px-6 py-2 rounded-xl text-sm font-medium transition-colors whitespace-nowrap self-start sm:self-auto text-center ${
                   (settings?.soundEnabled ?? true) 
                     ? 'bg-[hsl(var(--primary))] text-white hover:bg-[hsl(var(--primary)/0.9)]' 
                     : 'bg-[hsl(var(--muted))] hover:bg-[hsl(var(--border))] text-[hsl(var(--foreground))]'
@@ -312,9 +355,9 @@ export function SettingsView() {
               </button>
             </div>
             
-            <div className="p-6 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-[hsl(var(--muted))] rounded-full"><Sparkles size={20} /></div>
+            <div className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-start sm:items-center gap-4">
+                <div className="p-3 bg-[hsl(var(--muted))] rounded-full shrink-0"><Sparkles size={20} /></div>
                 <div>
                   <div className="font-medium text-lg">Celebration Animation</div>
                   <div className="text-sm text-[hsl(var(--muted-foreground))]">Show subtle particle burst on completion</div>
@@ -322,7 +365,7 @@ export function SettingsView() {
               </div>
               <button 
                 onClick={() => db.settings.update('settings', { celebrationEnabled: !(settings?.celebrationEnabled ?? true) })}
-                className={`px-6 py-2 rounded-xl text-sm font-medium transition-colors ${
+                className={`w-full sm:w-auto px-6 py-2 rounded-xl text-sm font-medium transition-colors whitespace-nowrap self-start sm:self-auto text-center ${
                   (settings?.celebrationEnabled ?? true) 
                     ? 'bg-[hsl(var(--primary))] text-white hover:bg-[hsl(var(--primary)/0.9)]' 
                     : 'bg-[hsl(var(--muted))] hover:bg-[hsl(var(--border))] text-[hsl(var(--foreground))]'
@@ -363,19 +406,19 @@ export function SettingsView() {
           <div className="bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-2xl overflow-hidden shadow-sm flex flex-col">
             
             <div className="p-6 flex flex-col gap-4 border-b border-[hsl(var(--border))]">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 bg-amber-500/10 rounded-full text-amber-500"><Download size={20} /></div>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-start sm:items-center gap-4">
+                  <div className="p-3 bg-amber-500/10 rounded-full text-amber-500 shrink-0"><Download size={20} /></div>
                   <div>
                     <div className="font-medium text-lg">Quick JSON Export</div>
                     <div className="text-sm text-[hsl(var(--muted-foreground))]">Download or copy workspace structure and tasks</div>
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <button onClick={() => setShowExportWarning({ action: 'copy' })} className="px-4 py-2 rounded-xl bg-[hsl(var(--muted))] hover:bg-[hsl(var(--border))] text-sm font-medium flex items-center gap-1.5 transition-colors">
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <button onClick={() => setShowExportWarning({ action: 'copy' })} className="flex-1 sm:flex-initial px-4 py-2 rounded-xl bg-[hsl(var(--muted))] hover:bg-[hsl(var(--border))] text-sm font-medium flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap">
                     <Copy size={16} /> Copy JSON
                   </button>
-                  <button onClick={() => setShowExportWarning({ action: 'download' })} className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium flex items-center gap-1.5 transition-colors">
+                  <button onClick={() => setShowExportWarning({ action: 'download' })} className="flex-1 sm:flex-initial px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap">
                     <Download size={16} /> Export JSON
                   </button>
                 </div>
@@ -387,43 +430,37 @@ export function SettingsView() {
               </div>
             </div>
 
-            <div className="p-6 flex items-center justify-between border-b border-[hsl(var(--border))]">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-blue-500/10 rounded-full text-blue-500"><Upload size={20} /></div>
+            <div className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[hsl(var(--border))]">
+              <div className="flex items-start sm:items-center gap-4">
+                <div className="p-3 bg-blue-500/10 rounded-full text-blue-500 shrink-0"><Upload size={20} /></div>
                 <div>
                   <div className="font-medium text-lg">Full App Import</div>
                   <div className="text-sm text-[hsl(var(--muted-foreground))]">Restore everything from JSON</div>
                 </div>
               </div>
-              <button onClick={() => setIsImportOpen(true)} className="px-6 py-2 rounded-xl bg-[hsl(var(--muted))] hover:bg-[hsl(var(--border))] transition-colors text-sm font-medium">Open Importer</button>
+              <button onClick={() => setIsImportOpen(true)} className="w-full sm:w-auto px-6 py-2 rounded-xl bg-[hsl(var(--muted))] hover:bg-[hsl(var(--border))] transition-colors text-sm font-medium whitespace-nowrap self-start sm:self-auto text-center">Open Importer</button>
             </div>
 
-            <div className="p-6 flex flex-col gap-4 border-b border-[hsl(var(--border))]">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-orange-500/10 text-orange-500 rounded-full"><Trash2 size={20} /></div>
+            <div className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[hsl(var(--border))]">
+              <div className="flex items-start sm:items-center gap-4">
+                <div className="p-3 bg-orange-500/10 text-orange-500 rounded-full shrink-0"><Trash2 size={20} /></div>
                 <div>
                   <div className="font-medium text-lg text-orange-500">Reset Workspace Checklist</div>
-                  <div className="text-sm text-[hsl(var(--muted-foreground))]">Resets all task progress globally, preserves structure. Type <strong>I agree to reset</strong> below to confirm.</div>
+                  <div className="text-sm text-[hsl(var(--muted-foreground))]">Resets all task progress globally, preserves structure</div>
                 </div>
               </div>
-              <div className="flex gap-4">
-                 <input value={resetChecklistConfirm} onChange={e => setResetChecklistConfirm(e.target.value)} placeholder="I agree to reset" className="flex-1 bg-transparent border border-[hsl(var(--border))] rounded-xl px-4 outline-none focus:border-orange-500" />
-                 <button disabled={resetChecklistConfirm !== 'I agree to reset'} onClick={resetWorkspaceChecklist} className="px-6 py-2 rounded-xl bg-orange-500 text-white font-medium text-sm disabled:opacity-50 transition-opacity">Reset Progress</button>
-              </div>
+              <button onClick={() => setShowResetModal(true)} className="w-full sm:w-auto px-6 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-medium text-sm transition-colors whitespace-nowrap self-start sm:self-auto text-center">Reset Progress</button>
             </div>
 
-            <div className="p-6 flex flex-col gap-4 border-b border-[hsl(var(--border))]">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-red-500/10 text-red-500 rounded-full"><Trash2 size={20} /></div>
+            <div className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[hsl(var(--border))]">
+              <div className="flex items-start sm:items-center gap-4">
+                <div className="p-3 bg-red-500/10 text-red-500 rounded-full shrink-0"><Trash2 size={20} /></div>
                 <div>
                   <div className="font-medium text-lg text-red-500">Delete Entire Workspace</div>
-                  <div className="text-sm text-[hsl(var(--muted-foreground))]">Permanently deletes all data. Type <strong>I agree to delete all</strong> below to confirm.</div>
+                  <div className="text-sm text-[hsl(var(--muted-foreground))]">Permanently deletes all data and uploads</div>
                 </div>
               </div>
-              <div className="flex gap-4">
-                 <input value={deleteWorkspaceConfirm} onChange={e => setDeleteWorkspaceConfirm(e.target.value)} placeholder="I agree to delete all" className="flex-1 bg-transparent border border-[hsl(var(--border))] rounded-xl px-4 outline-none focus:border-red-500" />
-                 <button disabled={deleteWorkspaceConfirm !== 'I agree to delete all'} onClick={clearCache} className="px-6 py-2 rounded-xl bg-red-500 text-white font-medium text-sm disabled:opacity-50 transition-opacity">Delete Entire Workspace</button>
-              </div>
+              <button onClick={() => setShowDeleteModal(true)} className="w-full sm:w-auto px-6 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white font-medium text-sm transition-colors whitespace-nowrap self-start sm:self-auto text-center">Delete Entire Workspace</button>
             </div>
           </div>
         </section>
@@ -509,6 +546,149 @@ export function SettingsView() {
         )}
       </AnimatePresence>
 
+      {/* Reset progress Confirmation Modal */}
+      <AnimatePresence>
+        {showResetModal && (
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }} 
+            className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" 
+            onClick={() => { setShowResetModal(false); setResetChecklistConfirm(''); }}
+          >
+            <motion.div 
+              initial={{ scale: 0.95 }} 
+              animate={{ scale: 1 }} 
+              exit={{ scale: 0.95 }} 
+              className="w-full max-w-md bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-2xl shadow-xl p-6 relative" 
+              onClick={e => e.stopPropagation()}
+            >
+              <button 
+                onClick={() => { setShowResetModal(false); setResetChecklistConfirm(''); }} 
+                className="absolute top-4 right-4 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] p-1 transition-colors"
+              >
+                <X size={18} />
+              </button>
+              
+              <div className="flex items-center gap-3 text-orange-500 mb-4">
+                <div className="p-2 bg-orange-500/10 rounded-lg">
+                  <Trash2 size={24} />
+                </div>
+                <h2 className="text-xl font-semibold">Reset Checklist Progress</h2>
+              </div>
+              
+              <p className="text-sm text-[hsl(var(--muted-foreground))] mb-6 leading-relaxed">
+                This will reset all task completion progress globally across your entire workspace, while preserving your categories, subjects, and tasks. This action cannot be undone.
+              </p>
+              
+              <div className="flex flex-col gap-2 mb-6">
+                <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wider">
+                  Type <span className="text-[hsl(var(--foreground))] font-bold select-all">I agree to reset</span> to confirm
+                </label>
+                <input 
+                  type="text"
+                  value={resetChecklistConfirm} 
+                  onChange={e => setResetChecklistConfirm(e.target.value)} 
+                  placeholder="I agree to reset" 
+                  className="w-full bg-[hsl(var(--background))] border border-[hsl(var(--border))] rounded-xl px-4 py-3 text-sm outline-none focus:border-orange-500 text-[hsl(var(--foreground))]"
+                />
+              </div>
+
+              <div className="flex gap-3 justify-end">
+                <button 
+                  onClick={() => { setShowResetModal(false); setResetChecklistConfirm(''); }} 
+                  className="px-4 py-2 rounded-xl hover:bg-[hsl(var(--muted))] text-sm font-medium transition-colors text-[hsl(var(--foreground))]"
+                >
+                  Cancel
+                </button>
+                <button 
+                  disabled={resetChecklistConfirm !== 'I agree to reset'} 
+                  onClick={() => {
+                    resetWorkspaceChecklist();
+                    setShowResetModal(false);
+                  }} 
+                  className="px-5 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 disabled:opacity-40 disabled:hover:bg-orange-500 text-white text-sm font-medium transition-all"
+                >
+                  Reset Progress
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete entire workspace Confirmation Modal */}
+      <AnimatePresence>
+        {showDeleteModal && (
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }} 
+            className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" 
+            onClick={() => { setShowDeleteModal(false); setDeleteWorkspaceConfirm(''); }}
+          >
+            <motion.div 
+              initial={{ scale: 0.95 }} 
+              animate={{ scale: 1 }} 
+              exit={{ scale: 0.95 }} 
+              className="w-full max-w-md bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-2xl shadow-xl p-6 relative" 
+              onClick={e => e.stopPropagation()}
+            >
+              <button 
+                onClick={() => { setShowDeleteModal(false); setDeleteWorkspaceConfirm(''); }} 
+                className="absolute top-4 right-4 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] p-1 transition-colors"
+              >
+                <X size={18} />
+              </button>
+              
+              <div className="flex items-center gap-3 text-red-500 mb-4">
+                <div className="p-2 bg-red-500/10 rounded-lg">
+                  <Trash2 size={24} />
+                </div>
+                <h2 className="text-xl font-semibold">Delete Entire Workspace</h2>
+              </div>
+              
+              <p className="text-sm text-[hsl(var(--muted-foreground))] mb-6 leading-relaxed">
+                This will permanently delete all categories, subjects, tasks, domains, and uploaded media. <strong>All your work will be permanently lost</strong>. This action cannot be undone.
+              </p>
+              
+              <div className="flex flex-col gap-2 mb-6">
+                <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wider">
+                  Type <span className="text-[hsl(var(--foreground))] font-bold select-all">I agree to delete all</span> to confirm
+                </label>
+                <input 
+                  type="text"
+                  value={deleteWorkspaceConfirm} 
+                  onChange={e => setDeleteWorkspaceConfirm(e.target.value)} 
+                  placeholder="I agree to delete all" 
+                  className="w-full bg-[hsl(var(--background))] border border-[hsl(var(--border))] rounded-xl px-4 py-3 text-sm outline-none focus:border-red-500 text-[hsl(var(--foreground))]"
+                />
+              </div>
+
+              <div className="flex gap-3 justify-end">
+                <button 
+                  onClick={() => { setShowDeleteModal(false); setDeleteWorkspaceConfirm(''); }} 
+                  className="px-4 py-2 rounded-xl hover:bg-[hsl(var(--muted))] text-sm font-medium transition-colors text-[hsl(var(--foreground))]"
+                >
+                  Cancel
+                </button>
+                <button 
+                  disabled={deleteWorkspaceConfirm !== 'I agree to delete all'} 
+                  onClick={() => {
+                    clearCache();
+                    setShowDeleteModal(false);
+                  }} 
+                  className="px-5 py-2 rounded-xl bg-red-500 hover:bg-red-600 disabled:opacity-40 disabled:hover:bg-red-500 text-white text-sm font-medium transition-all"
+                >
+                  Delete Entire Workspace
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      </div>
     </div>
   );
 }
@@ -522,7 +702,7 @@ function CategoryEditItem({ category, globalStructureLock }: any) {
         value={title} onChange={e => setTitle(e.target.value)} onBlur={() => db.categories.update(category.id, { title })} readOnly={globalStructureLock}
         className="bg-transparent border-none outline-none font-medium text-[hsl(var(--foreground))] flex-1"
       />
-      {!globalStructureLock && <button onClick={() => confirm("Delete category and ALL its domains/subjects/tasks?") && db.categories.delete(category.id)} className="text-[hsl(var(--muted-foreground))] hover:text-red-500 opacity-0 group-hover:opacity-100 p-1"><Trash2 size={16}/></button>}
+      {!globalStructureLock && <button onClick={() => confirm("Delete category and ALL its domains/subjects/tasks?") && db.categories.delete(category.id)} className="text-[hsl(var(--muted-foreground))] hover:text-red-500 transition-opacity opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-1"><Trash2 size={16}/></button>}
     </Reorder.Item>
   );
 }
