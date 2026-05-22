@@ -155,7 +155,7 @@ export function SettingsView() {
     }
   };
 
-  const isLocked = settings?.globalLock;
+  const globalStructureLock = settings?.globalLock;
 
   return (
     <div className="h-full w-full flex flex-col p-8 lg:p-16 max-w-4xl mx-auto overflow-y-auto custom-scrollbar">
@@ -254,20 +254,20 @@ export function SettingsView() {
         <section>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold uppercase tracking-widest text-[hsl(var(--primary))]">Category Manager</h2>
-            {isLocked && <span className="text-xs text-[hsl(var(--muted-foreground))]">(Locked)</span>}
+            {globalStructureLock && <span className="text-xs text-[hsl(var(--muted-foreground))]">(Locked)</span>}
           </div>
           <div className="bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-2xl p-4 shadow-sm">
             <Reorder.Group axis="y" values={catOrder} onReorder={(newOrder) => {
-              if (isLocked) return;
+              if (globalStructureLock) return;
               setCatOrder(newOrder);
               newOrder.forEach((c, i) => db.categories.update(c.id, { order: i }));
             }} className="flex flex-col gap-2">
               {catOrder.map(cat => (
-                <CategoryEditItem key={cat.id} category={cat} isLocked={isLocked} />
+                <CategoryEditItem key={cat.id} category={cat} globalStructureLock={globalStructureLock} />
               ))}
             </Reorder.Group>
             
-            {!isLocked && (
+            {!globalStructureLock && (
                <button onClick={() => db.categories.add({ id: uuidv4(), title: 'New Category', order: catOrder.length })} className="mt-4 flex items-center gap-2 text-sm text-[hsl(var(--primary))] font-medium px-4 py-2 hover:bg-[hsl(var(--primary)/0.1)] rounded-lg transition-colors">
                  <Plus size={16} /> Add Category
                </button>
@@ -387,16 +387,16 @@ export function SettingsView() {
   );
 }
 
-function CategoryEditItem({ category, isLocked }: any) {
+function CategoryEditItem({ category, globalStructureLock }: any) {
   const [title, setTitle] = useState(category.title);
   return (
-    <Reorder.Item value={category} dragListener={!isLocked} className="flex items-center gap-3 p-3 bg-[hsl(var(--background))] border border-[hsl(var(--border))] rounded-xl group">
-      {!isLocked && <div className="cursor-grab text-[hsl(var(--muted-foreground))] opacity-50 group-hover:opacity-100 transition-opacity"><GripVertical size={16}/></div>}
+    <Reorder.Item value={category} dragListener={!globalStructureLock} className="flex items-center gap-3 p-3 bg-[hsl(var(--background))] border border-[hsl(var(--border))] rounded-xl group">
+      {!globalStructureLock && <div className="cursor-grab text-[hsl(var(--muted-foreground))] opacity-50 group-hover:opacity-100 transition-opacity"><GripVertical size={16}/></div>}
       <input 
-        value={title} onChange={e => setTitle(e.target.value)} onBlur={() => db.categories.update(category.id, { title })} readOnly={isLocked}
+        value={title} onChange={e => setTitle(e.target.value)} onBlur={() => db.categories.update(category.id, { title })} readOnly={globalStructureLock}
         className="bg-transparent border-none outline-none font-medium text-[hsl(var(--foreground))] flex-1"
       />
-      {!isLocked && <button onClick={() => confirm("Delete category and ALL its domains/subjects/tasks?") && db.categories.delete(category.id)} className="text-[hsl(var(--muted-foreground))] hover:text-red-500 opacity-0 group-hover:opacity-100 p-1"><Trash2 size={16}/></button>}
+      {!globalStructureLock && <button onClick={() => confirm("Delete category and ALL its domains/subjects/tasks?") && db.categories.delete(category.id)} className="text-[hsl(var(--muted-foreground))] hover:text-red-500 opacity-0 group-hover:opacity-100 p-1"><Trash2 size={16}/></button>}
     </Reorder.Item>
   );
 }

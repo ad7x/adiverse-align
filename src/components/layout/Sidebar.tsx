@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion';
 import { useUIStore } from '../../store';
 import { db } from '../../db';
@@ -23,7 +23,7 @@ export function Sidebar() {
   const domains = useLiveQuery(() => db.domains.orderBy('order').toArray()) || [];
   const subjects = useLiveQuery(() => db.subjects.orderBy('order').toArray()) || [];
 
-  const isLocked = settings?.globalLock || false;
+  const globalStructureLock = settings?.globalLock || false;
 
   const toggleLock = async () => {
     if (settings) {
@@ -36,7 +36,7 @@ export function Sidebar() {
   useEffect(() => { setLocalCategories(categories); }, [categories]);
 
   const handleCategoryReorder = (newOrder: typeof categories) => {
-    if (isLocked) return;
+    if (globalStructureLock) return;
     setLocalCategories(newOrder);
     newOrder.forEach((c, i) => db.categories.update(c.id, { order: i }));
   };
@@ -53,7 +53,7 @@ export function Sidebar() {
   }, []);
 
   const handleContextMenu = (e: React.MouseEvent, type: 'category' | 'domain' | 'subject', item: any) => {
-    if (isLocked) return;
+    if (globalStructureLock) return;
     e.preventDefault();
     e.stopPropagation();
     // Clamp position so menu doesn't overflow
@@ -190,11 +190,11 @@ export function Sidebar() {
       <div className={cn("flex items-center p-4 min-h-[64px] shrink-0", sidebarCollapsed ? "justify-center" : "justify-between")}>
         {sidebarCollapsed ? (
           <button onClick={() => setSidebarCollapsed(false)} className="hover:opacity-80 p-0.5 rounded-lg">
-            <img src="https://res.cloudinary.com/druczdy9a/image/upload/f_png/q_auto:low/f_png/q_auto:low/c_auto,h_208,w_200/icon_xhoe7c.png" alt="App Logo" className="w-[22px] h-[22px] object-contain rounded-md" />
+            <img src="/favicon.png" alt="App Logo" className="w-[22px] h-[22px] object-contain rounded-md" />
           </button>
         ) : (
           <>
-            <img src="https://res.cloudinary.com/druczdy9a/image/upload/f_png/q_auto:low/f_png/q_auto:low/c_auto,h_208,w_200/icon_xhoe7c.png" alt="App Logo" className="w-[22px] h-[22px] ml-1 object-contain rounded-md" />
+            <img src="/favicon.png" alt="App Logo" className="w-[22px] h-[22px] ml-1 object-contain rounded-md" />
             <button onClick={() => setSidebarCollapsed(true)} className="text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] p-1 rounded-md">
               <PanelLeftClose size={18} />
             </button>
@@ -221,7 +221,7 @@ export function Sidebar() {
                 domains={domains.filter(d => d.categoryId === category.id)}
                 allSubjects={subjects}
                 onContextMenu={handleContextMenu}
-                isLocked={isLocked}
+                globalStructureLock={globalStructureLock}
                 onRename={(type: any, item: any) => setModalConfig({ type: 'rename', itemType: type, item, title: item.title })}
                 onDelete={(type: any, item: any) => setModalConfig({ type: 'delete', itemType: type, item })}
                 onCreateDomain={quickCreateDomain}
@@ -231,7 +231,7 @@ export function Sidebar() {
               />
             ))}
           </Reorder.Group>
-          {!isLocked && (
+          {!globalStructureLock && (
             <button
               onClick={() => setModalConfig({ type: 'create_category', itemType: 'category', item: null, title: 'New Category' })}
               className="mt-2 flex items-center gap-2 text-[13px] font-medium text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] px-2 py-1.5 rounded-lg hover:bg-[hsl(var(--muted))] transition-colors w-full"
@@ -247,8 +247,8 @@ export function Sidebar() {
         {!sidebarCollapsed && (
           <div className="px-3 py-2">
             <NavItem
-              icon={isLocked ? <Lock size={18} /> : <Unlock size={18} />}
-              label={isLocked ? "Unlock Structure" : "Lock Structure"}
+              icon={globalStructureLock ? <Lock size={18} /> : <Unlock size={18} />}
+              label={globalStructureLock ? "Unlock Structure" : "Lock Structure"}
               collapsed={false}
               onClick={toggleLock}
             />
@@ -444,7 +444,7 @@ function ProfileMenuItem({ icon, label, onClick }: { icon: React.ReactNode; labe
 
 // ─── CategoryNode ────────────────────────────────────────────────────
 
-function CategoryNode({ category, domains, allSubjects, onContextMenu, isLocked, onRename, onDelete, onCreateDomain, onCreateSubject, pendingRenameId, onRenameDone }: any) {
+function CategoryNode({ category, domains, allSubjects, onContextMenu, globalStructureLock, onRename, onDelete, onCreateDomain, onCreateSubject, pendingRenameId, onRenameDone }: any) {
   const dragControls = useDragControls();
   const [localDomains, setLocalDomains] = useState<any[]>([]);
   const { expandedSidebarNodes, toggleSidebarNode } = useUIStore();
@@ -462,7 +462,7 @@ function CategoryNode({ category, domains, allSubjects, onContextMenu, isLocked,
   }, [pendingRenameId, category.id, onRenameDone]);
 
   const handleDomainReorder = (newOrder: any[]) => {
-    if (isLocked) return;
+    if (globalStructureLock) return;
     setLocalDomains(newOrder);
     newOrder.forEach((d, i) => db.domains.update(d.id, { order: i }));
   };
@@ -473,7 +473,7 @@ function CategoryNode({ category, domains, allSubjects, onContextMenu, isLocked,
         className="px-2 mb-1.5 flex items-center group cursor-default"
         onContextMenu={e => onContextMenu(e, 'category', category)}
       >
-        {!isLocked && (
+        {!globalStructureLock && (
           <div onPointerDown={e => dragControls.start(e)} className="text-[hsl(var(--muted-foreground))] opacity-0 group-hover:opacity-100 cursor-grab mr-1">
             <GripVertical size={12} />
           </div>
@@ -481,7 +481,7 @@ function CategoryNode({ category, domains, allSubjects, onContextMenu, isLocked,
         <h3 className="text-[11px] font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-[0.08em] truncate flex-1">
           {category.title}
         </h3>
-        {!isLocked && (
+        {!globalStructureLock && (
           <div className="opacity-0 group-hover:opacity-100 flex items-center" onClick={e => e.stopPropagation()}>
             <button onClick={() => onRename('category', category)} className="text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] p-1" title="Rename"><Pencil size={12} /></button>
             <button onClick={() => onDelete('category', category)} className="text-[hsl(var(--muted-foreground))] hover:text-red-500 p-1" title="Delete"><Trash2 size={12} /></button>
@@ -497,7 +497,7 @@ function CategoryNode({ category, domains, allSubjects, onContextMenu, isLocked,
             domain={domain}
             subjects={allSubjects.filter((s: any) => s.domainId === domain.id)}
             onContextMenu={onContextMenu}
-            isLocked={isLocked}
+            globalStructureLock={globalStructureLock}
             onRename={onRename}
             onDelete={onDelete}
             onCreateSubject={onCreateSubject}
@@ -512,7 +512,7 @@ function CategoryNode({ category, domains, allSubjects, onContextMenu, isLocked,
 
 // ─── DomainNode ──────────────────────────────────────────────────────
 
-function DomainNode({ domain, subjects, onContextMenu, isLocked, onRename, onDelete, onCreateSubject, pendingRenameId, onRenameDone }: any) {
+function DomainNode({ domain, subjects, onContextMenu, globalStructureLock, onRename, onDelete, onCreateSubject, pendingRenameId, onRenameDone }: any) {
   const dragControls = useDragControls();
   const { expandedSidebarNodes, toggleSidebarNode } = useUIStore();
   const expanded = expandedSidebarNodes[domain.id] !== false; // Default expanded
@@ -531,7 +531,7 @@ function DomainNode({ domain, subjects, onContextMenu, isLocked, onRename, onDel
   }, [pendingRenameId, domain.id, onRenameDone]);
 
   const handleSubjectReorder = (newOrder: any[]) => {
-    if (isLocked) return;
+    if (globalStructureLock) return;
     setLocalSubjects(newOrder);
     newOrder.forEach((s, i) => db.subjects.update(s.id, { order: i }));
   };
@@ -543,7 +543,7 @@ function DomainNode({ domain, subjects, onContextMenu, isLocked, onRename, onDel
         onClick={() => toggleSidebarNode(domain.id)}
         onContextMenu={e => onContextMenu(e, 'domain', domain)}
       >
-        {!isLocked && (
+        {!globalStructureLock && (
           <div onPointerDown={e => { e.stopPropagation(); dragControls.start(e); }} className="absolute left-[-14px] text-[hsl(var(--muted-foreground))] opacity-0 group-hover:opacity-100 cursor-grab p-1 hidden sm:block">
             <GripVertical size={14} />
           </div>
@@ -553,7 +553,7 @@ function DomainNode({ domain, subjects, onContextMenu, isLocked, onRename, onDel
         </div>
         <span className="font-medium text-[13px] truncate flex-1">{domain.title}</span>
 
-        {!isLocked && (
+        {!globalStructureLock && (
           <div className="opacity-0 group-hover:opacity-100 flex items-center shrink-0" onClick={e => e.stopPropagation()}>
             <button onClick={() => onRename('domain', domain)} className="text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] p-1" title="Rename"><Pencil size={12} /></button>
             <button onClick={() => onDelete('domain', domain)} className="text-[hsl(var(--muted-foreground))] hover:text-red-500 p-1" title="Delete"><Trash2 size={12} /></button>
@@ -574,7 +574,7 @@ function DomainNode({ domain, subjects, onContextMenu, isLocked, onRename, onDel
                   key={subject.id}
                   subject={subject}
                   onContextMenu={onContextMenu}
-                  isLocked={isLocked}
+                  globalStructureLock={globalStructureLock}
                   onRename={onRename}
                   onDelete={onDelete}
                   pendingRenameId={pendingRenameId}
@@ -591,7 +591,7 @@ function DomainNode({ domain, subjects, onContextMenu, isLocked, onRename, onDel
 
 // ─── SubjectNode ─────────────────────────────────────────────────────
 
-function SubjectNode({ subject, onContextMenu, isLocked, onRename, onDelete, pendingRenameId, onRenameDone }: any) {
+function SubjectNode({ subject, onContextMenu, globalStructureLock, onRename, onDelete, pendingRenameId, onRenameDone }: any) {
   const dragControls = useDragControls();
   const { activeView, setActiveView } = useUIStore();
   const isActive = activeView.type === 'subject' && activeView.subjectId === subject.id;
@@ -625,7 +625,7 @@ function SubjectNode({ subject, onContextMenu, isLocked, onRename, onDelete, pen
 
   return (
     <Reorder.Item value={subject} dragListener={false} dragControls={dragControls} className="list-none group relative">
-      {!isLocked && (
+      {!globalStructureLock && (
         <div onPointerDown={e => { e.stopPropagation(); dragControls.start(e); }} className="absolute left-[-10px] top-1/2 -translate-y-1/2 text-[hsl(var(--muted-foreground))] opacity-0 group-hover:opacity-100 cursor-grab z-10 p-1">
           <GripVertical size={12} />
         </div>
@@ -635,7 +635,7 @@ function SubjectNode({ subject, onContextMenu, isLocked, onRename, onDelete, pen
         onContextMenu={e => onContextMenu(e, 'subject', subject)}
         className={cn(
           "text-[13px] text-left py-1.5 transition-colors w-full rounded-lg flex items-center cursor-pointer",
-          !isLocked ? "pl-5 pr-1" : "px-3",
+          !globalStructureLock ? "pl-5 pr-1" : "px-3",
           isActive
             ? "bg-[hsl(var(--muted))] text-[hsl(var(--foreground))] font-medium"
             : "text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted)/0.5)]"
@@ -658,7 +658,7 @@ function SubjectNode({ subject, onContextMenu, isLocked, onRename, onDelete, pen
           <div className="truncate flex-1">{subject.title}</div>
         )}
 
-        {!isLocked && !isInlineRename && (
+        {!globalStructureLock && !isInlineRename && (
           <div className="opacity-0 group-hover:opacity-100 flex items-center shrink-0" onClick={e => e.stopPropagation()}>
             <button onClick={() => { setIsInlineRename(true); setRenameValue(subject.title); }} className="text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] p-1" title="Rename"><Pencil size={12} /></button>
             <button onClick={() => onDelete('subject', subject)} className="text-[hsl(var(--muted-foreground))] hover:text-red-500 p-1 mr-1" title="Delete"><Trash2 size={12} /></button>

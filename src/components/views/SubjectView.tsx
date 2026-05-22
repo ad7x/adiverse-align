@@ -1,11 +1,11 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { db } from '../../db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { v4 as uuidv4 } from 'uuid';
 import {
   MoreHorizontal, Plus, GripVertical, Trash2, ChevronRight,
   Info, Upload, Copy, ChevronDown, Calendar, Tag, AlignLeft, X,
-  MoreVertical, Bot, Youtube, Lock, Unlock, Download, FileJson
+  MoreVertical, Bot, Youtube, Lock, Unlock, Download, FileJson, Edit3
 } from 'lucide-react';
 import { motion, AnimatePresence, Reorder, useMotionValue, useSpring, useMotionTemplate } from 'framer-motion';
 import { PremiumCheckbox } from '../ui/PremiumCheckbox';
@@ -14,6 +14,7 @@ import { SmartCloneModal, type CloneOption } from './SmartCloneModal';
 import { YouTubeImportModal, type YoutubeImportMode } from './YouTubeImportModal';
 import { exportSubjectZip, importSubjectZip, exportSubjectJSON } from '../../lib/zip';
 import { useUIStore } from '../../store';
+import { cn } from '../../lib/utils';
 
 // ─── Main SubjectView ────────────────────────────────────────────────
 
@@ -409,7 +410,7 @@ export function SubjectView({ subjectId, highlightId }: { subjectId: string; hig
                           )}
 
                           <MenuBtn onClick={handleRenameInstance} disabled={isStructureLocked}>Rename Instance</MenuBtn>
-                          <MenuBtn onClick={() => { setShowResetModal(true); setMenuOpen(false); }} disabled={isStructureLocked} className="text-orange-500 hover:bg-orange-500/10">
+                          <MenuBtn onClick={() => { setShowResetModal(true); setMenuOpen(false); }} className="text-orange-500 hover:bg-orange-500/10">
                             Reset Progress
                           </MenuBtn>
                           <MenuBtn onClick={handleDeleteInstance} disabled={isStructureLocked} className="text-red-500 hover:bg-red-500/10" icon={<Trash2 size={14} />}>
@@ -466,26 +467,24 @@ export function SubjectView({ subjectId, highlightId }: { subjectId: string; hig
 
           {/* ─── Task List ────────────────────────────────────────── */}
           <div className="flex-1 pb-20">
-            <Reorder.Group axis="y" values={topLevel} onReorder={(newOrder) => {
-              if (!isStructureLocked) newOrder.forEach((t, i) => db.tasks.update(t.id, { order: i }));
+            <Reorder.Group axis="y" values={topLevel.map(t => t.id)} onReorder={(newOrderIds) => {
+              if (!isStructureLocked) newOrderIds.forEach((id, i) => db.tasks.update(id, { order: i }));
             }} className="flex flex-col gap-6">
               {topLevel.map(item =>
                 item.type === 'section'
                   ? <SectionNode key={item.id} section={item} allTasks={tasks} isStructureLocked={isStructureLocked} settings={settings} subjectId={subjectId} expandedSections={expandedSections} toggleSection={toggleSection} onCascadeDelete={cascadeDeleteSection} />
-                  : <TaskNode key={item.id} task={item} isStructureLocked={isStructureLocked} settings={settings} />
+                  : <TaskNode key={item.id} task={item} isStructureLocked={isStructureLocked} settings={settings} subjectId={subjectId} />
               )}
             </Reorder.Group>
 
-            {!isStructureLocked && (
-              <div className="mt-8 flex items-center gap-4 flex-wrap">
-                <button onClick={() => db.tasks.add({ id: uuidv4(), subjectId, instanceId: selectedInstanceId, parentId: null, type: 'task', title: '', description: '', notes: '', completed: false, order: tasks.length })} className="flex items-center gap-2 text-[13px] font-medium text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] px-4 py-2 bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-full shadow-sm hover:shadow-md transition-all">
-                  <Plus size={16} /> Add Task
-                </button>
-                <button onClick={() => db.tasks.add({ id: uuidv4(), subjectId, instanceId: selectedInstanceId, parentId: null, type: 'section', title: '', description: '', notes: '', completed: false, order: tasks.length })} className="flex items-center gap-2 text-[13px] font-medium text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] px-4 py-2 border border-transparent hover:border-[hsl(var(--primary)/0.3)] rounded-full transition-all">
-                  <Plus size={16} /> Add Section
-                </button>
-              </div>
-            )}
+            <div className="mt-8 flex items-center gap-4 flex-wrap">
+              <button onClick={() => db.tasks.add({ id: uuidv4(), subjectId, instanceId: selectedInstanceId, parentId: null, type: 'task', title: '', description: '', notes: '', completed: false, order: tasks.length })} className="flex items-center gap-2 text-[13px] font-medium text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] px-4 py-2 bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-full shadow-sm hover:shadow-md transition-all">
+                <Plus size={16} /> Add Task
+              </button>
+              <button onClick={() => db.tasks.add({ id: uuidv4(), subjectId, instanceId: selectedInstanceId, parentId: null, type: 'section', title: '', description: '', notes: '', completed: false, order: tasks.length })} className="flex items-center gap-2 text-[13px] font-medium text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] px-4 py-2 border border-transparent hover:border-[hsl(var(--primary)/0.3)] rounded-full transition-all">
+                <Plus size={16} /> Add Section
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -609,14 +608,13 @@ function MenuBtn({ children, onClick, disabled, className, icon }: { children: R
 
 // ─── SectionNode ─────────────────────────────────────────────────────
 
-
-
-// ─── SectionNode ─────────────────────────────────────────────────────
-
 function SectionNode({ section, allTasks, isStructureLocked, level = 0, settings, subjectId, expandedSections, toggleSection, onCascadeDelete }: any) {
   const children = allTasks.filter((t: any) => t.parentId === section.id).sort((a: any, b: any) => a.order - b.order);
   const [title, setTitle] = useState(section.title);
   const [showBottomSheet, setShowBottomSheet] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<any>(null);
 
   // Expansion state from store (persisted)
@@ -640,7 +638,32 @@ function SectionNode({ section, allTasks, isStructureLocked, level = 0, settings
   const totalCount = descendants.length;
   const progressPercent = totalCount ? Math.round((completedCount / totalCount) * 100) : 0;
 
+  // Description bulk toggle support
+  const expandedTasks = useUIStore(state => state.expandedTasks);
+  const setMultipleTasksExpanded = useUIStore(state => state.setMultipleTasksExpanded);
+  
+  const descendantTaskIds = descendants.map((t: any) => t.id);
+  const allExpanded = descendantTaskIds.length > 0 && descendantTaskIds.every(id => expandedTasks[subjectId]?.[id]);
+
+  const toggleAllDescendantsExpanded = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setMultipleTasksExpanded(subjectId, descendantTaskIds, !allExpanded);
+  };
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    if (!showMenu) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showMenu]);
+
   const handlePointerDown = () => {
+    if (isStructureLocked) return;
     timerRef.current = setTimeout(() => {
       setShowBottomSheet(true);
       if ("vibrate" in navigator) navigator.vibrate(50);
@@ -651,7 +674,7 @@ function SectionNode({ section, allTasks, isStructureLocked, level = 0, settings
   const duplicateSection = async () => {
     const newSectionId = uuidv4();
     await db.tasks.add({ ...section, id: newSectionId, title: section.title + ' (Copy)', order: section.order + 1 });
-    // Shallow copy children for now, full cascade duplicate is complex but this handles basic
+    // Shallow copy children
     for (const child of children) {
       await db.tasks.add({ ...child, id: uuidv4(), parentId: newSectionId });
     }
@@ -659,7 +682,7 @@ function SectionNode({ section, allTasks, isStructureLocked, level = 0, settings
   };
 
   return (
-    <Reorder.Item value={section} dragListener={!isStructureLocked} className={`flex flex-col bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-xl mb-4 overflow-hidden ${level > 0 ? 'ml-6 border-l-2 border-l-[hsl(var(--primary)/0.5)]' : ''}`}>
+    <Reorder.Item value={section.id} dragListener={!isStructureLocked} className={`flex flex-col bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-xl mb-4 overflow-hidden ${level > 0 ? 'ml-6 border-l-2 border-l-[hsl(var(--primary)/0.5)]' : ''}`}>
       <div 
         className="flex items-center gap-3 p-4 group cursor-pointer hover:bg-[hsl(var(--muted)/0.3)] transition-colors select-none" 
         onClick={handleToggle}
@@ -667,15 +690,21 @@ function SectionNode({ section, allTasks, isStructureLocked, level = 0, settings
         onPointerUp={cancelPointer}
         onPointerLeave={cancelPointer}
         onPointerCancel={cancelPointer}
+        onPointerMove={cancelPointer}
       >
         <div className="text-[hsl(var(--muted-foreground))]">{isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}</div>
         {!isStructureLocked && <div className="text-[hsl(var(--muted-foreground))] opacity-60 md:opacity-0 md:group-hover:opacity-100 cursor-grab shrink-0" onClick={e => e.stopPropagation()}><GripVertical size={16} /></div>}
         <input
+          ref={inputRef}
           value={title}
           onChange={e => setTitle(e.target.value)}
           onBlur={() => db.tasks.update(section.id, { title })}
           readOnly={isStructureLocked}
-          onClick={e => e.stopPropagation()}
+          onClick={e => {
+            if (!isStructureLocked) {
+              e.stopPropagation();
+            }
+          }}
           placeholder={level === 0 ? "Section Name" : "Subsection Name"}
           className="text-base font-semibold bg-transparent border-none outline-none text-[hsl(var(--foreground))] flex-1"
         />
@@ -684,7 +713,66 @@ function SectionNode({ section, allTasks, isStructureLocked, level = 0, settings
             <motion.div initial={{ width: 0 }} animate={{ width: `${progressPercent}%` }} className="bg-[hsl(var(--primary))] h-full rounded-full" />
           </div>
           <span className="text-xs font-mono text-[hsl(var(--muted-foreground))] whitespace-nowrap min-w-[3rem] text-right">{completedCount} / {totalCount}</span>
-          {!isStructureLocked && <button onClick={() => onCascadeDelete(section.id)} className="text-[hsl(var(--muted-foreground))] hover:text-red-500 opacity-0 group-hover:opacity-100 p-1 hidden md:block"><Trash2 size={14} /></button>}
+          
+          {/* Descendants description expand/collapse toggle */}
+          {descendantTaskIds.length > 0 && (
+            <button 
+              onClick={toggleAllDescendantsExpanded} 
+              title={allExpanded ? "Collapse all descriptions" : "Expand all descriptions"} 
+              className="text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] p-1"
+            >
+              <AlignLeft size={16} className={cn("transition-colors", allExpanded && "text-[hsl(var(--primary))]")} />
+            </button>
+          )}
+
+          {/* 3-dot dropdown menu */}
+          {!isStructureLocked && (
+            <div className="relative" ref={dropdownRef}>
+              <button 
+                onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }} 
+                className="text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] p-1"
+              >
+                <MoreVertical size={16} />
+              </button>
+              <AnimatePresence>
+                {showMenu && (
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.95, y: -10 }} 
+                    animate={{ opacity: 1, scale: 1, y: 0 }} 
+                    exit={{ opacity: 0, scale: 0.95, y: -10 }} 
+                    className="absolute right-0 mt-1 w-36 bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-lg shadow-lg z-50 py-1"
+                  >
+                    <button 
+                      onClick={(e) => { 
+                        e.stopPropagation(); 
+                        setShowMenu(false); 
+                        if (!isStructureLocked) {
+                          inputRef.current?.focus(); 
+                        }
+                      }} 
+                      disabled={isStructureLocked} 
+                      className="flex items-center gap-2 w-full text-left px-3 py-2 text-xs font-medium hover:bg-[hsl(var(--muted))] transition-colors disabled:opacity-50 text-[hsl(var(--foreground))]"
+                    >
+                      <Edit3 size={14} /> Rename
+                    </button>
+                    <button 
+                      onClick={(e) => { 
+                        e.stopPropagation(); 
+                        setShowMenu(false); 
+                        if (!isStructureLocked) {
+                          onCascadeDelete(section.id); 
+                        }
+                      }} 
+                      disabled={isStructureLocked} 
+                      className="flex items-center gap-2 w-full text-left px-3 py-2 text-xs font-medium hover:bg-[hsl(var(--muted))] transition-colors disabled:opacity-50 text-red-500"
+                    >
+                      <Trash2 size={14} /> Delete
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
         </div>
       </div>
 
@@ -692,11 +780,11 @@ function SectionNode({ section, allTasks, isStructureLocked, level = 0, settings
         {isExpanded && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="border-t border-[hsl(var(--border))]">
             <div className="p-4 flex flex-col gap-2">
-              <Reorder.Group axis="y" values={children} onReorder={(newOrder) => { if (!isStructureLocked) newOrder.forEach((t, i) => db.tasks.update(t.id, { order: i })); }}>
+              <Reorder.Group axis="y" values={children.map((c: any) => c.id)} onReorder={(newOrderIds) => { if (!isStructureLocked) newOrderIds.forEach((id, i) => db.tasks.update(id, { order: i })); }}>
                 {children.map((child: any) =>
                   child.type === 'section'
                     ? <SectionNode key={child.id} section={child} allTasks={allTasks} isStructureLocked={isStructureLocked} level={level + 1} settings={settings} subjectId={subjectId} expandedSections={expandedSections} toggleSection={toggleSection} onCascadeDelete={onCascadeDelete} />
-                    : <TaskNode key={child.id} task={child} isStructureLocked={isStructureLocked} settings={settings} />
+                    : <TaskNode key={child.id} task={child} isStructureLocked={isStructureLocked} settings={settings} subjectId={subjectId} />
                 )}
               </Reorder.Group>
               {!isStructureLocked && (
@@ -725,7 +813,7 @@ function SectionNode({ section, allTasks, isStructureLocked, level = 0, settings
                 <h3 className="font-semibold text-[hsl(var(--foreground))]">{title || 'Section Actions'}</h3>
               </div>
               <div className="p-2 flex flex-col">
-                <MenuBtn onClick={() => { setShowBottomSheet(false); setTimeout(() => { const el = document.activeElement as HTMLElement; el?.blur(); }, 0); }}>Rename</MenuBtn>
+                <MenuBtn onClick={() => { setShowBottomSheet(false); if (!isStructureLocked) { inputRef.current?.focus(); } }}>Rename</MenuBtn>
                 {!isStructureLocked && (
                   <>
                     <MenuBtn onClick={() => { db.tasks.add({ id: uuidv4(), subjectId: section.subjectId, instanceId: section.instanceId, parentId: section.id, type: 'task', title: '', description: '', notes: '', completed: false, tags: [], order: children.length }); setShowBottomSheet(false); }} icon={<Plus size={16} />}>Add Task</MenuBtn>
@@ -745,32 +833,62 @@ function SectionNode({ section, allTasks, isStructureLocked, level = 0, settings
 
 // ─── TaskNode ────────────────────────────────────────────────────────
 
-function TaskNode({ task, isStructureLocked, settings }: any) {
+function TaskNode({ task, isStructureLocked, settings, subjectId }: any) {
   const [title, setTitle] = useState(task.title);
-  const [isExpanded, setIsExpanded] = useState(false);
   const [tagInput, setTagInput] = useState('');
   const [showBottomSheet, setShowBottomSheet] = useState(false);
   
+  const taskRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<any>(null);
   const lastTapRef = useRef(0);
 
   const completed = task.completed;
   const tags = task.tags || [];
 
+  // Expansion state from store (persisted)
+  const expandedTasks = useUIStore(state => state.expandedTasks);
+  const toggleTaskExpanded = useUIStore(state => state.toggleTaskExpanded);
+  const setTaskExpanded = useUIStore(state => state.setTaskExpanded);
+  const isExpanded = expandedTasks[subjectId]?.[task.id] ?? false;
+
   useEffect(() => { setTitle(task.title); }, [task.title]);
 
   // Click outside to collapse
   useEffect(() => {
     if (!isExpanded) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      // Don't collapse if clicking inside bottom sheet
-      if ((e.target as HTMLElement).closest('.task-bottom-sheet')) return;
-      setIsExpanded(false);
+    const handleClickOutside = (e: Event) => {
+      const target = e.target as HTMLElement;
+      if (!target) return;
+
+      // If the target element has been unmounted/detached from the DOM during re-renders,
+      // it was almost certainly inside the editor/task. Do not close.
+      if (!document.body.contains(target)) return;
+
+      // Don't close if clicking inside this task container itself
+      if (taskRef.current?.contains(target)) return;
+
+      // Don't close if clicking inside a task bottom sheet
+      if (target.closest('.task-bottom-sheet')) return;
+
+      // Don't close if clicking inside a rich editor portal (like fullscreen mode)
+      if (target.closest('[data-rich-editor-portal="true"]')) return;
+
+      // Otherwise, close it
+      setTaskExpanded(subjectId, task.id, false);
     };
-    // small delay to prevent immediate trigger
-    setTimeout(() => document.addEventListener('mousedown', handleClickOutside), 100);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isExpanded]);
+    
+    // Register touch and mouse events after a small delay
+    const timer = setTimeout(() => {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
+    }, 100);
+
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, [isExpanded, subjectId, task.id, setTaskExpanded]);
 
   const toggleCompleted = () => {
     const newCompleted = !completed;
@@ -800,11 +918,25 @@ function TaskNode({ task, isStructureLocked, settings }: any) {
   const checkmarkStyle = settings?.checkmarkStyle || 'modern';
 
   const handlePointerDown = (e: React.PointerEvent) => {
+    // If clicking on interactive elements, do nothing
+    const target = e.target as HTMLElement;
+    if (
+      target.closest('a') ||
+      target.closest('button') ||
+      target.closest('input[type="checkbox"]') ||
+      target.closest('.premium-checkbox') ||
+      target.closest('.tag-container') ||
+      (!isStructureLocked && target.closest('input'))
+    ) {
+      return;
+    }
+
     const now = Date.now();
     if (now - lastTapRef.current < 300) {
       // double tap
-      setIsExpanded(true);
+      toggleTaskExpanded(subjectId, task.id);
       lastTapRef.current = 0;
+      cancelPointer();
       return;
     }
     lastTapRef.current = now;
@@ -816,98 +948,133 @@ function TaskNode({ task, isStructureLocked, settings }: any) {
   };
   const cancelPointer = () => clearTimeout(timerRef.current);
 
+  const handleRowClick = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    // Don't toggle on interactive elements
+    if (
+      target.closest('a') ||
+      target.closest('button') ||
+      target.closest('input[type="checkbox"]') ||
+      target.closest('.premium-checkbox') ||
+      target.closest('.tag-container')
+    ) {
+      return;
+    }
+    if (isStructureLocked) {
+      toggleTaskExpanded(subjectId, task.id);
+    } else {
+      // Only toggle if not clicking on the title input
+      if (!target.closest('input')) {
+        toggleTaskExpanded(subjectId, task.id);
+      }
+    }
+  };
+
   const duplicateTask = async () => {
     await db.tasks.add({ ...task, id: uuidv4(), title: task.title + ' (Copy)', order: task.order + 1 });
     setShowBottomSheet(false);
   };
 
   return (
-    <Reorder.Item value={task} dragListener={!isStructureLocked} className={`flex flex-col rounded-xl mb-2 border ${isExpanded ? 'border-[hsl(var(--border))] bg-[hsl(var(--card))]' : 'border-transparent hover:border-[hsl(var(--border))] hover:bg-[hsl(var(--muted)/0.3)]'} transition-colors ${completed ? 'opacity-70' : ''}`} onPointerDown={e => e.stopPropagation()}>
-      <div 
-        className="flex items-start gap-3 p-3 group relative select-none"
-        onPointerDown={handlePointerDown}
-        onPointerUp={cancelPointer}
-        onPointerLeave={cancelPointer}
-        onPointerCancel={cancelPointer}
-      >
-        {!isStructureLocked && <div className="mt-1.5 cursor-grab text-[hsl(var(--muted-foreground))] opacity-60 md:opacity-0 md:group-hover:opacity-100 shrink-0"><GripVertical size={14} /></div>}
+    <Reorder.Item value={task.id} dragListener={!isStructureLocked} className={`flex flex-col rounded-xl mb-2 border ${isExpanded ? 'border-[hsl(var(--border))] bg-[hsl(var(--card))]' : 'border-transparent hover:border-[hsl(var(--border))] hover:bg-[hsl(var(--muted)/0.3)]'} transition-colors ${completed ? 'opacity-70' : ''}`} onPointerDown={e => e.stopPropagation()}>
+      <div ref={taskRef} className="flex flex-col">
+        <div 
+          className="flex items-start gap-3 p-3 group relative select-none"
+          onPointerDown={handlePointerDown}
+          onPointerUp={cancelPointer}
+          onPointerLeave={cancelPointer}
+          onPointerCancel={cancelPointer}
+          onPointerMove={cancelPointer}
+          onClick={handleRowClick}
+        >
+          {!isStructureLocked && <div className="mt-1.5 cursor-grab text-[hsl(var(--muted-foreground))] opacity-60 md:opacity-0 md:group-hover:opacity-100 shrink-0"><GripVertical size={14} /></div>}
 
-        <div className="mt-1 shrink-0">
-          <PremiumCheckbox checked={completed} onChange={toggleCompleted} variant={checkmarkStyle} />
+          <div className="mt-1 shrink-0">
+            <PremiumCheckbox checked={completed} onChange={toggleCompleted} variant={checkmarkStyle} />
+          </div>
+
+          <div className="flex-1 flex flex-col pt-1">
+            <input
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              onBlur={() => db.tasks.update(task.id, { title })}
+              readOnly={isStructureLocked}
+              onClick={e => {
+                if (!isStructureLocked) {
+                  e.stopPropagation();
+                }
+              }}
+              placeholder="Task title"
+              className={`bg-transparent border-none outline-none font-medium text-sm flex-1 ${completed ? 'line-through text-[hsl(var(--muted-foreground))]' : 'text-[hsl(var(--foreground))]'}`}
+            />
+            {task.youtubeUrl && (
+              <a href={task.youtubeUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-red-500 hover:underline mt-1 flex items-center gap-1 z-10" onClick={e => e.stopPropagation()}>
+                <Youtube size={12} /> Watch Video {task.duration ? `(${Math.round(task.duration / 60)} min)` : ''}
+              </a>
+            )}
+            {!isExpanded && (tags.length > 0 || completed) && (
+              <div className="flex flex-wrap items-center gap-2 mt-2 tag-container">
+                {tags.map((tag: string, idx: number) => (
+                  <span key={idx} className="text-[10px] px-1.5 py-0.5 rounded-md bg-[hsl(var(--primary)/0.1)] border border-[hsl(var(--primary)/0.2)] text-[hsl(var(--primary))] font-medium uppercase tracking-wider">{tag}</span>
+                ))}
+                {completed && task.completedAt && (
+                  <span className="text-[10px] flex items-center gap-1 text-[hsl(var(--muted-foreground))]"><Calendar size={10} /> {formatDate(task.completedAt)}</span>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 mt-1 shrink-0 relative z-10">
+            {!isStructureLocked && <button onClick={() => db.tasks.delete(task.id)} className="text-[hsl(var(--muted-foreground))] hover:text-red-500 opacity-0 group-hover:opacity-100 p-1 hidden md:block"><Trash2 size={14} /></button>}
+            <button 
+              onClick={(e) => { e.stopPropagation(); toggleTaskExpanded(subjectId, task.id); }} 
+              className={`p-1 rounded-md transition-colors ${isExpanded || tags.length > 0 ? 'text-[hsl(var(--foreground))]' : 'text-[hsl(var(--muted-foreground))] opacity-0 group-hover:opacity-100 hidden md:block'}`}
+            >
+              {isExpanded ? <ChevronDown size={16} /> : <AlignLeft size={16} />}
+            </button>
+          </div>
         </div>
 
-        <div className="flex-1 flex flex-col pt-1">
-          <input
-            value={title}
-            onChange={e => setTitle(e.target.value)}
-            onBlur={() => db.tasks.update(task.id, { title })}
-            readOnly={isStructureLocked}
-            placeholder="Task title"
-            className={`bg-transparent border-none outline-none font-medium text-sm flex-1 ${completed ? 'line-through text-[hsl(var(--muted-foreground))]' : 'text-[hsl(var(--foreground))]'}`}
-          />
-          {task.youtubeUrl && (
-            <a href={task.youtubeUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-red-500 hover:underline mt-1 flex items-center gap-1 z-10" onClick={e => e.stopPropagation()}>
-              <Youtube size={12} /> Watch Video {task.duration ? `(${Math.round(task.duration / 60)} min)` : ''}
-            </a>
+        <AnimatePresence>
+          {isExpanded && (
+            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden border-t border-[hsl(var(--border))]" onPointerDown={e => e.stopPropagation()}>
+              <div className="p-4 pl-10 sm:pl-12 flex flex-col gap-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] flex items-center gap-1.5"><AlignLeft size={14} /> Description</label>
+                  <div className="mt-1">
+                    <RichEditor
+                      key={task.id}
+                      initialContent={task.description || ''}
+                      onSave={jsonContent => db.tasks.update(task.id, { description: jsonContent })}
+                      readOnly={false}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] flex items-center gap-1.5"><Tag size={14} /> Tags</label>
+                  <div className="flex flex-wrap items-center gap-2 tag-container">
+                    {tags.map((tag: string, idx: number) => (
+                      <span key={idx} className="text-[11px] px-2 py-1 rounded-md bg-[hsl(var(--primary)/0.1)] border border-[hsl(var(--primary)/0.2)] text-[hsl(var(--primary))] font-medium flex items-center gap-1">
+                        {tag}
+                        {/* tag delete remains allowed when locked */}
+                        <X size={12} className="cursor-pointer hover:text-[hsl(var(--foreground))]" onClick={() => removeTag(tag)} />
+                      </span>
+                    ))}
+                    <input data-task-tag-input={task.id} value={tagInput} onChange={e => setTagInput(e.target.value)} onKeyDown={addTag} placeholder="Add tag..." className="bg-transparent border border-[hsl(var(--border))] rounded-md px-2 py-1 flex-1 min-w-[120px] text-xs outline-none focus:border-[hsl(var(--primary))] text-[hsl(var(--foreground))]" />
+                  </div>
+                </div>
+
+                {completed && task.completedAt && (
+                  <div className="flex items-center gap-1.5 text-xs text-[hsl(var(--muted-foreground))] font-medium border-t border-[hsl(var(--border))] pt-3 mt-1">
+                    <Calendar size={14} /> Completed on {formatDate(task.completedAt)}
+                  </div>
+                )}
+              </div>
+            </motion.div>
           )}
-          {!isExpanded && (tags.length > 0 || completed) && (
-            <div className="flex flex-wrap items-center gap-2 mt-2">
-              {tags.map((tag: string, idx: number) => (
-                <span key={idx} className="text-[10px] px-1.5 py-0.5 rounded-md bg-[hsl(var(--primary)/0.1)] border border-[hsl(var(--primary)/0.2)] text-[hsl(var(--primary))] font-medium uppercase tracking-wider">{tag}</span>
-              ))}
-              {completed && task.completedAt && (
-                <span className="text-[10px] flex items-center gap-1 text-[hsl(var(--muted-foreground))]"><Calendar size={10} /> {formatDate(task.completedAt)}</span>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2 mt-1 shrink-0 relative z-10">
-          {!isStructureLocked && <button onClick={() => db.tasks.delete(task.id)} className="text-[hsl(var(--muted-foreground))] hover:text-red-500 opacity-0 group-hover:opacity-100 p-1 hidden md:block"><Trash2 size={14} /></button>}
-          <button onClick={() => setIsExpanded(!isExpanded)} className={`p-1 rounded-md transition-colors ${isExpanded || tags.length > 0 ? 'text-[hsl(var(--foreground))]' : 'text-[hsl(var(--muted-foreground))] opacity-0 group-hover:opacity-100 hidden md:block'}`}>
-            {isExpanded ? <ChevronDown size={16} /> : <AlignLeft size={16} />}
-          </button>
-        </div>
+        </AnimatePresence>
       </div>
-
-      <AnimatePresence>
-        {isExpanded && (
-          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden border-t border-[hsl(var(--border))]" onPointerDown={e => e.stopPropagation()}>
-            <div className="p-4 pl-10 sm:pl-12 flex flex-col gap-4">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] flex items-center gap-1.5"><AlignLeft size={14} /> Description</label>
-                <div className="mt-1">
-                  <RichEditor
-                    key={task.id}
-                    initialContent={task.description || ''}
-                    onSave={jsonContent => db.tasks.update(task.id, { description: jsonContent })}
-                    readOnly={false}
-                  />
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] flex items-center gap-1.5"><Tag size={14} /> Tags</label>
-                <div className="flex flex-wrap items-center gap-2">
-                  {tags.map((tag: string, idx: number) => (
-                    <span key={idx} className="text-[11px] px-2 py-1 rounded-md bg-[hsl(var(--primary)/0.1)] border border-[hsl(var(--primary)/0.2)] text-[hsl(var(--primary))] font-medium flex items-center gap-1">
-                      {tag}
-                      {!isStructureLocked && <X size={12} className="cursor-pointer hover:text-[hsl(var(--foreground))]" onClick={() => removeTag(tag)} />}
-                    </span>
-                  ))}
-                  <input value={tagInput} onChange={e => setTagInput(e.target.value)} onKeyDown={addTag} placeholder="Add tag..." className="bg-transparent border border-[hsl(var(--border))] rounded-md px-2 py-1 flex-1 min-w-[120px] text-xs outline-none focus:border-[hsl(var(--primary))] text-[hsl(var(--foreground))]" />
-                </div>
-              </div>
-
-              {completed && task.completedAt && (
-                <div className="flex items-center gap-1.5 text-xs text-[hsl(var(--muted-foreground))] font-medium border-t border-[hsl(var(--border))] pt-3 mt-1">
-                  <Calendar size={14} /> Completed on {formatDate(task.completedAt)}
-                </div>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       <AnimatePresence>
         {showBottomSheet && (
@@ -918,11 +1085,12 @@ function TaskNode({ task, isStructureLocked, settings }: any) {
                 <h3 className="font-semibold text-[hsl(var(--foreground))]">{title || 'Task Actions'}</h3>
               </div>
               <div className="p-2 flex flex-col">
-                <MenuBtn onClick={() => { setIsExpanded(true); setShowBottomSheet(false); }} icon={<AlignLeft size={16} />}>Expand Description</MenuBtn>
+                <MenuBtn onClick={() => { setTaskExpanded(subjectId, task.id, true); setShowBottomSheet(false); }} icon={<AlignLeft size={16} />}>Expand Description</MenuBtn>
                 <MenuBtn onClick={() => { navigator.clipboard.writeText(title); showToast('Copied to clipboard'); setShowBottomSheet(false); }} icon={<Copy size={16} />}>Copy Title</MenuBtn>
+                {/* Add Tags is always allowed */}
+                <MenuBtn onClick={() => { setTaskExpanded(subjectId, task.id, true); setShowBottomSheet(false); setTimeout(() => { const el = document.querySelector(`[data-task-tag-input="${task.id}"]`) as HTMLInputElement; el?.focus(); }, 200); }} icon={<Tag size={16} />}>Add Tags</MenuBtn>
                 {!isStructureLocked && (
                   <>
-                    <MenuBtn onClick={() => { setIsExpanded(true); setShowBottomSheet(false); setTimeout(() => { document.querySelector('input[placeholder="Add tag..."]')?.dispatchEvent(new MouseEvent('focus')); }, 100); }} icon={<Tag size={16} />}>Add Tags</MenuBtn>
                     <MenuBtn onClick={duplicateTask} icon={<Copy size={16} />}>Duplicate</MenuBtn>
                     <MenuBtn onClick={() => { db.tasks.delete(task.id); setShowBottomSheet(false); }} className="text-red-500" icon={<Trash2 size={16} />}>Delete</MenuBtn>
                   </>

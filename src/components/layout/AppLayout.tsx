@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sidebar } from './Sidebar';
 import { useUIStore } from '../../store';
 import { cn } from '../../lib/utils';
@@ -35,7 +35,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             aria-label="Open Sidebar"
           >
             <img 
-              src="https://res.cloudinary.com/druczdy9a/image/upload/f_png/q_auto:low/f_png/q_auto:low/c_auto,h_208,w_200/icon_xhoe7c.png" 
+              src="/favicon.png" 
               alt="App Logo" 
               className="w-5 h-5 object-contain rounded-md animate-pulse" 
             />

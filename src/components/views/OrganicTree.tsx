@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../db';
 import { useUIStore } from '../../store';
@@ -446,14 +446,19 @@ export function OrganicTree() {
 
   // ─── Pointer events for pan + hit-test ─────────────────────────
 
+  const dragged = useRef(false);
+
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    if (e.pointerType === 'touch') return;
     isDragging.current = true;
+    dragged.current = false;
     const t = transformRef.current;
     dragStart.current = { x: e.clientX, y: e.clientY, tx: t.x, ty: t.y };
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
   }, []);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (e.pointerType === 'touch') return;
     const rect = containerRef.current?.getBoundingClientRect();
     if (rect) {
       setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
@@ -462,6 +467,9 @@ export function OrganicTree() {
     if (isDragging.current) {
       const dx = e.clientX - dragStart.current.x;
       const dy = e.clientY - dragStart.current.y;
+      if (Math.hypot(dx, dy) > 5) {
+        dragged.current = true;
+      }
       transformRef.current = {
         ...transformRef.current,
         x: dragStart.current.tx + dx,
@@ -492,11 +500,33 @@ export function OrganicTree() {
     isDragging.current = false;
   }, []);
 
-  const handleNodeClick = useCallback(() => {
-    if (hoverNode && hoverNode.type === 'subject') {
-      setActiveView({ type: 'subject', subjectId: hoverNode.id });
+  const handleNodeClick = useCallback((e: React.MouseEvent) => {
+    if (dragged.current) {
+      return;
     }
-  }, [hoverNode, setActiveView]);
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const t = transformRef.current;
+    const cx = (e.clientX - rect.left - t.x) / t.scale;
+    const cy = (e.clientY - rect.top - t.y) / t.scale;
+
+    let closest: TreeNode | null = null;
+    let closestDist = Infinity;
+    for (const node of flatNodesRef.current) {
+      const dist = Math.hypot(node.x - cx, node.y - cy);
+      // touch-target radius: Math.max(node.radius * 2.5, 24 / t.scale)
+      const hitRadius = Math.max(node.radius * 2.5, 24 / t.scale);
+      if (dist < hitRadius && dist < closestDist) {
+        closest = node;
+        closestDist = dist;
+      }
+    }
+
+    if (closest && closest.type === 'subject') {
+      setActiveView({ type: 'subject', subjectId: closest.id });
+    }
+  }, [setActiveView]);
 
   // ─── Touch events for mobile (two-finger zoom/pan) ─────────────
 
@@ -505,6 +535,7 @@ export function OrganicTree() {
     if (!el) return;
 
     const onTouchStart = (e: TouchEvent) => {
+      dragged.current = false;
       if (e.touches.length === 2) {
         e.preventDefault();
         const [a, b] = [e.touches[0], e.touches[1]];
@@ -513,12 +544,14 @@ export function OrganicTree() {
           x: (a.clientX + b.clientX) / 2,
           y: (a.clientY + b.clientY) / 2
         };
+      } else if (e.touches.length === 1) {
+        dragStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, tx: 0, ty: 0 };
       }
-      // Single finger: don't prevent default → allows page scroll
     };
 
     const onTouchMove = (e: TouchEvent) => {
       if (e.touches.length === 2) {
+        dragged.current = true;
         e.preventDefault();
         const [a, b] = [e.touches[0], e.touches[1]];
         const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
@@ -545,6 +578,12 @@ export function OrganicTree() {
 
         lastTouchDist.current = dist;
         lastTouchCenter.current = center;
+      } else if (e.touches.length === 1) {
+        const dx = e.touches[0].clientX - dragStart.current.x;
+        const dy = e.touches[0].clientY - dragStart.current.y;
+        if (Math.hypot(dx, dy) > 8) {
+          dragged.current = true;
+        }
       }
     };
 
@@ -573,7 +612,10 @@ export function OrganicTree() {
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
       onClick={handleNodeClick}
-      style={{ cursor: isDragging.current ? 'grabbing' : (hoverNode ? 'pointer' : 'grab') }}
+      style={{
+        cursor: isDragging.current ? 'grabbing' : (hoverNode ? 'pointer' : 'grab'),
+        touchAction: 'pan-y'
+      }}
     >
       <canvas
         ref={canvasRef}

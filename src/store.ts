@@ -16,6 +16,11 @@ interface UIState {
   // Per-subject section expansion persistence
   expandedSections: Record<string, Record<string, boolean>>;
   toggleSection: (subjectId: string, sectionId: string) => void;
+  // Per-subject task description expansion persistence
+  expandedTasks: Record<string, Record<string, boolean>>;
+  toggleTaskExpanded: (subjectId: string, taskId: string) => void;
+  setMultipleTasksExpanded: (subjectId: string, taskIds: string[], expanded: boolean) => void;
+  setTaskExpanded: (subjectId: string, taskId: string, expanded: boolean) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -53,6 +58,43 @@ export const useUIStore = create<UIState>()(
           }
         };
       }),
+      expandedTasks: {},
+      toggleTaskExpanded: (subjectId, taskId) => set((state) => {
+        const subjectTasks = state.expandedTasks[subjectId] || {};
+        return {
+          expandedTasks: {
+            ...state.expandedTasks,
+            [subjectId]: {
+              ...subjectTasks,
+              [taskId]: !subjectTasks[taskId]
+            }
+          }
+        };
+      }),
+      setMultipleTasksExpanded: (subjectId, taskIds, expanded) => set((state) => {
+        const subjectTasks = { ...(state.expandedTasks[subjectId] || {}) };
+        taskIds.forEach(id => {
+          subjectTasks[id] = expanded;
+        });
+        return {
+          expandedTasks: {
+            ...state.expandedTasks,
+            [subjectId]: subjectTasks
+          }
+        };
+      }),
+      setTaskExpanded: (subjectId, taskId, expanded) => set((state) => {
+        const subjectTasks = state.expandedTasks[subjectId] || {};
+        return {
+          expandedTasks: {
+            ...state.expandedTasks,
+            [subjectId]: {
+              ...subjectTasks,
+              [taskId]: expanded
+            }
+          }
+        };
+      }),
     }),
     {
       name: 'adiverse-ui-storage-v3',
@@ -65,6 +107,7 @@ export const useUIStore = create<UIState>()(
           : state.activeView,
         expandedSidebarNodes: state.expandedSidebarNodes,
         expandedSections: state.expandedSections,
+        expandedTasks: state.expandedTasks,
       }),
     }
   )

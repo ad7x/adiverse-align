@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 type Variant = 'modern' | 'circle-glow' | 'neon' | 'minimal' | 'gradient';
