@@ -445,3 +445,14 @@
 }
 
 
+
+/* Natively prevent iOS focus auto-zoom by enforcing 16px minimum font size on mobile */
+@media (max-width: 768px) {
+  input, 
+  textarea, 
+  select, 
+  [contenteditable="true"],
+  .ProseMirror {
+    font-size: 16px !important;
+  }
+}

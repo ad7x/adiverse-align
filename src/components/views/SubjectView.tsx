@@ -7,7 +7,7 @@ import {
   Info, Upload, Copy, ChevronDown, Calendar, Tag, AlignLeft, X,
   MoreVertical, Bot, Youtube, Lock, Unlock, Download, FileJson, Edit3, FileText
 } from 'lucide-react';
-import { motion, AnimatePresence, Reorder, useMotionValue, useSpring, useMotionTemplate } from 'framer-motion';
+import { motion, AnimatePresence, Reorder, useMotionValue, useSpring, useMotionTemplate, useDragControls } from 'framer-motion';
 import { PremiumCheckbox } from '../ui/PremiumCheckbox';
 import { RichEditor } from '../ui/RichEditor';
 import { SmartCloneModal, type CloneOption } from './SmartCloneModal';
@@ -830,6 +830,7 @@ function SectionNode({ section, allTasks, isStructureLocked, level = 0, settings
   const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<any>(null);
+  const dragControls = useDragControls();
 
   // Expansion state from store (persisted)
   const isExpanded = expandedSections?.[subjectId]?.[section.id] ?? false;
@@ -896,7 +897,7 @@ function SectionNode({ section, allTasks, isStructureLocked, level = 0, settings
   };
 
   return (
-    <Reorder.Item value={section.id} dragListener={!isStructureLocked} className={`flex flex-col bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-xl mb-4 overflow-hidden ${level > 0 ? 'ml-6 border-l-2 border-l-[hsl(var(--primary)/0.5)]' : ''}`}>
+    <Reorder.Item value={section.id} dragListener={false} dragControls={dragControls} onDragStart={() => { if (navigator.vibrate) navigator.vibrate(15); }} className={`flex flex-col bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-xl mb-4 overflow-hidden ${level > 0 ? 'ml-6 border-l-2 border-l-[hsl(var(--primary)/0.5)]' : ''}`}>
       <div 
         className="flex items-center gap-3 p-4 group cursor-pointer hover:bg-[hsl(var(--muted)/0.3)] transition-colors select-none" 
         onClick={handleToggle}
@@ -907,7 +908,19 @@ function SectionNode({ section, allTasks, isStructureLocked, level = 0, settings
         onPointerMove={cancelPointer}
       >
         <div className="text-[hsl(var(--muted-foreground))]">{isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}</div>
-        {!isStructureLocked && <div className="text-[hsl(var(--muted-foreground))] opacity-60 md:opacity-0 md:group-hover:opacity-100 cursor-grab shrink-0" onClick={e => e.stopPropagation()}><GripVertical size={16} /></div>}
+        {!isStructureLocked && (
+          <div 
+            className="text-[hsl(var(--muted-foreground))] opacity-60 md:opacity-0 md:group-hover:opacity-100 cursor-grab shrink-0 p-1 -m-1" 
+            onClick={e => e.stopPropagation()}
+            onPointerDown={e => {
+              e.stopPropagation();
+              dragControls.start(e, { distanceThreshold: 8 });
+            }}
+            style={{ touchAction: 'none' }}
+          >
+            <GripVertical size={16} />
+          </div>
+        )}
         <input
           ref={inputRef}
           value={title}
@@ -1051,6 +1064,7 @@ function TaskNode({ task, isStructureLocked, settings, subjectId }: any) {
   const [title, setTitle] = useState(task.title);
   const [tagInput, setTagInput] = useState('');
   const [showBottomSheet, setShowBottomSheet] = useState(false);
+  const dragControls = useDragControls();
   
   const taskRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<any>(null);
@@ -1161,7 +1175,7 @@ function TaskNode({ task, isStructureLocked, settings, subjectId }: any) {
   };
 
   return (
-    <Reorder.Item value={task.id} dragListener={!isStructureLocked} className={`flex flex-col rounded-xl mb-2 border ${isExpanded ? 'border-[hsl(var(--border))] bg-[hsl(var(--card))]' : 'border-transparent hover:border-[hsl(var(--border))] hover:bg-[hsl(var(--muted)/0.3)]'} transition-colors ${completed ? 'opacity-70' : ''}`} onPointerDown={e => e.stopPropagation()}>
+    <Reorder.Item value={task.id} dragListener={false} dragControls={dragControls} onDragStart={() => { if (navigator.vibrate) navigator.vibrate(15); }} className={`flex flex-col rounded-xl mb-2 border ${isExpanded ? 'border-[hsl(var(--border))] bg-[hsl(var(--card))]' : 'border-transparent hover:border-[hsl(var(--border))] hover:bg-[hsl(var(--muted)/0.3)]'} transition-colors ${completed ? 'opacity-70' : ''}`} onPointerDown={e => e.stopPropagation()}>
       <div ref={taskRef} className="flex flex-col">
         <div 
           className="flex items-start gap-3 p-3 group relative select-none"
@@ -1172,7 +1186,19 @@ function TaskNode({ task, isStructureLocked, settings, subjectId }: any) {
           onPointerMove={cancelPointer}
           onClick={handleRowClick}
         >
-          {!isStructureLocked && <div className="mt-1.5 cursor-grab text-[hsl(var(--muted-foreground))] opacity-60 md:opacity-0 md:group-hover:opacity-100 shrink-0"><GripVertical size={14} /></div>}
+          {!isStructureLocked && (
+            <div 
+              className="mt-1.5 cursor-grab text-[hsl(var(--muted-foreground))] opacity-60 md:opacity-0 md:group-hover:opacity-100 shrink-0 p-1 -m-1"
+              onClick={e => e.stopPropagation()}
+              onPointerDown={e => {
+                e.stopPropagation();
+                dragControls.start(e, { distanceThreshold: 8 });
+              }}
+              style={{ touchAction: 'none' }}
+            >
+              <GripVertical size={14} />
+            </div>
+          )}
 
           <div 
             className="mt-1 shrink-0 premium-checkbox p-2 -m-2 select-none"

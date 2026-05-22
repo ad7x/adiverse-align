@@ -195,6 +195,13 @@ export function Sidebar() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  // Collapse sidebar reactively on mobile when activeView changes
+  useEffect(() => {
+    if (isMobile) {
+      setSidebarCollapsed(true);
+    }
+  }, [activeView, isMobile, setSidebarCollapsed]);
+
   // Modal title
   const modalTitleMap: Record<ModalType, string> = {
     create_category: 'Add Category',
@@ -254,15 +261,15 @@ export function Sidebar() {
       <div className="flex flex-col gap-0.5 px-2 py-1.5 shrink-0">
         <NavItem
           icon={<Home size={18} />} label="Home" collapsed={sidebarCollapsed}
-          active={activeView.type === 'home'} onClick={() => setActiveView({ type: 'home' })}
+          active={activeView.type === 'home'} onClick={() => { setActiveView({ type: 'home' }); if (isMobile) setSidebarCollapsed(true); }}
         />
         <NavItem
           icon={<Search size={18} />} label="Search" collapsed={sidebarCollapsed}
-          active={activeView.type === 'search'} onClick={() => setActiveView({ type: 'search' })}
+          active={activeView.type === 'search'} onClick={() => { setActiveView({ type: 'search' }); if (isMobile) setSidebarCollapsed(true); }}
         />
         <NavItem
           icon={<Tag size={18} />} label="Tags" collapsed={sidebarCollapsed}
-          active={activeView.type === 'tags'} onClick={() => setActiveView({ type: 'tags' })}
+          active={activeView.type === 'tags'} onClick={() => { setActiveView({ type: 'tags' }); if (isMobile) setSidebarCollapsed(true); }}
         />
       </div>
 
@@ -354,9 +361,9 @@ export function Sidebar() {
                 initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }}
                 className="absolute bottom-full left-2 right-2 mb-2 bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-xl shadow-2xl p-1.5 z-50"
               >
-                <ProfileMenuItem icon={<User size={14} />} label="Profile" onClick={() => { setActiveView({ type: 'settings' }); setShowProfileMenu(false); }} />
-                <ProfileMenuItem icon={<Settings size={14} />} label="Settings" onClick={() => { setActiveView({ type: 'settings' }); setShowProfileMenu(false); }} />
-                <ProfileMenuItem icon={<History size={14} />} label="Export History" onClick={() => { setActiveView({ type: 'settings' }); setShowProfileMenu(false); }} />
+                <ProfileMenuItem icon={<User size={14} />} label="Profile" onClick={() => { setActiveView({ type: 'settings' }); setShowProfileMenu(false); if (isMobile) setSidebarCollapsed(true); }} />
+                <ProfileMenuItem icon={<Settings size={14} />} label="Settings" onClick={() => { setActiveView({ type: 'settings' }); setShowProfileMenu(false); if (isMobile) setSidebarCollapsed(true); }} />
+                <ProfileMenuItem icon={<History size={14} />} label="Export History" onClick={() => { setActiveView({ type: 'settings' }); setShowProfileMenu(false); if (isMobile) setSidebarCollapsed(true); }} />
                 <div className="h-px bg-[hsl(var(--border))] my-1" />
                 <ProfileMenuItem icon={<HelpCircle size={14} />} label="Help" onClick={() => setShowProfileMenu(false)} />
                 <ProfileMenuItem icon={<Info size={14} />} label="About" onClick={() => setShowProfileMenu(false)} />
@@ -741,7 +748,7 @@ function DomainNode({ domain, subjects, allTasks, onContextMenu, globalStructure
 
 function SubjectNode({ subject, allTasks, onContextMenu, globalStructureLock, isMobile, onRename, onDelete }: any) {
   const dragControls = useDragControls();
-  const { activeView, setActiveView } = useUIStore();
+  const { activeView, setActiveView, setSidebarCollapsed } = useUIStore();
   const isActive = activeView.type === 'subject' && activeView.subjectId === subject.id;
 
   // Subject progress
@@ -768,7 +775,7 @@ function SubjectNode({ subject, allTasks, onContextMenu, globalStructureLock, is
         </div>
       )}
       <div
-        onClick={() => setActiveView({ type: 'subject', subjectId: subject.id })}
+        onClick={() => { setActiveView({ type: 'subject', subjectId: subject.id }); if (isMobile) setSidebarCollapsed(true); }}
         onContextMenu={e => onContextMenu(e, 'subject', subject)}
         {...(isMobile ? longPress : {})}
         className={cn(

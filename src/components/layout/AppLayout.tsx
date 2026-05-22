@@ -7,15 +7,43 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const { sidebarCollapsed, setSidebarCollapsed } = useUIStore();
   const [isMobile, setIsMobile] = useState(false);
 
+  const [viewportStyle, setViewportStyle] = useState<React.CSSProperties>({
+    height: '100vh',
+    width: '100vw',
+  });
+
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
     checkMobile();
     window.addEventListener('resize', checkMobile);
+
+    // Dynamic keyboard and viewport resizing using Visual Viewport API
+    if (window.visualViewport) {
+      const vv = window.visualViewport;
+      const handleViewportChange = () => {
+        setViewportStyle({
+          height: vv.height,
+          width: vv.width,
+        });
+      };
+      vv.addEventListener('resize', handleViewportChange);
+      vv.addEventListener('scroll', handleViewportChange);
+      handleViewportChange();
+      return () => {
+        window.removeEventListener('resize', checkMobile);
+        vv.removeEventListener('resize', handleViewportChange);
+        vv.removeEventListener('scroll', handleViewportChange);
+      };
+    }
+
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[hsl(var(--background))] text-[hsl(var(--foreground))]">
+    <div 
+      style={viewportStyle}
+      className="flex overflow-hidden bg-[hsl(var(--background))] text-[hsl(var(--foreground))]"
+    >
       <Sidebar />
       
       {/* Mobile Backdrop Overlay */}
