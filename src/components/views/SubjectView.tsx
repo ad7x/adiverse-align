@@ -537,7 +537,7 @@ REQUIREMENTS:
     }}>
       <motion.div className="pointer-events-none absolute inset-0 z-0 opacity-50 dark:opacity-30" style={{ background: backgroundTemplate }} />
 
-      <div className="flex-1 overflow-y-auto custom-scrollbar relative z-10 w-full p-4 sm:p-8 md:p-12">
+      <div className="flex-1 overflow-y-auto custom-scrollbar relative z-10 w-full p-3 sm:p-8 md:p-12">
         <div className="max-w-5xl mx-auto flex flex-col min-h-full">
 
           {/* ─── Header card ──────────────────────────────────────── */}
@@ -897,9 +897,9 @@ function SectionNode({ section, allTasks, isStructureLocked, level = 0, settings
   };
 
   return (
-    <Reorder.Item value={section.id} dragListener={false} dragControls={dragControls} onDragStart={() => { if (navigator.vibrate) navigator.vibrate(15); }} className={`flex flex-col bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-xl mb-4 overflow-hidden ${level > 0 ? 'ml-6 border-l-2 border-l-[hsl(var(--primary)/0.5)]' : ''}`}>
+    <Reorder.Item value={section.id} dragListener={false} dragControls={dragControls} onDragStart={() => { if (navigator.vibrate) navigator.vibrate(15); }} className={`flex flex-col bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-xl mb-4 overflow-hidden ${level > 0 ? 'ml-3 sm:ml-6 border-l-2 border-l-[hsl(var(--primary)/0.5)]' : ''}`}>
       <div 
-        className="flex items-center gap-3 p-4 group cursor-pointer hover:bg-[hsl(var(--muted)/0.3)] transition-colors select-none" 
+        className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4 group cursor-pointer hover:bg-[hsl(var(--muted)/0.3)] transition-colors select-none" 
         onClick={handleToggle}
         onPointerDown={handlePointerDown}
         onPointerUp={cancelPointer}
@@ -933,9 +933,9 @@ function SectionNode({ section, allTasks, isStructureLocked, level = 0, settings
             }
           }}
           placeholder={level === 0 ? "Section Name" : "Subsection Name"}
-          className="text-base font-semibold bg-transparent border-none outline-none text-[hsl(var(--foreground))] flex-1"
+          className="text-base font-semibold bg-transparent border-none outline-none text-[hsl(var(--foreground))] flex-1 min-w-0"
         />
-        <div className="flex items-center gap-4 ml-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-1.5 sm:gap-4 ml-auto" onClick={e => e.stopPropagation()}>
           <div className="w-24 md:w-32 h-1.5 bg-[hsl(var(--muted))] rounded-full overflow-hidden hidden sm:block">
             <motion.div initial={{ width: 0 }} animate={{ width: `${progressPercent}%` }} className="bg-[hsl(var(--primary))] h-full rounded-full" />
           </div>
@@ -1223,7 +1223,7 @@ function TaskNode({ task, isStructureLocked, settings, subjectId }: any) {
                 }
               }}
               placeholder="Task title"
-              className={`bg-transparent border-none outline-none font-medium text-sm flex-1 ${completed ? 'line-through text-[hsl(var(--muted-foreground))]' : 'text-[hsl(var(--foreground))]'}`}
+              className={`bg-transparent border-none outline-none font-medium text-sm flex-1 min-w-0 ${completed ? 'line-through text-[hsl(var(--muted-foreground))]' : 'text-[hsl(var(--foreground))]'}`}
             />
             {task.youtubeUrl && (
               <a href={task.youtubeUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-red-500 hover:underline mt-1 flex items-center gap-1 z-10" onClick={e => e.stopPropagation()}>
@@ -1246,7 +1246,7 @@ function TaskNode({ task, isStructureLocked, settings, subjectId }: any) {
             {!isStructureLocked && <button onClick={() => db.tasks.delete(task.id)} className="text-[hsl(var(--muted-foreground))] hover:text-red-500 opacity-0 group-hover:opacity-100 p-1 hidden md:block"><Trash2 size={14} /></button>}
             <button 
               onClick={(e) => { e.stopPropagation(); toggleTaskExpanded(subjectId, task.id); }} 
-              className={`p-1 rounded-md transition-colors ${isExpanded || tags.length > 0 ? 'text-[hsl(var(--foreground))]' : 'text-[hsl(var(--muted-foreground))] opacity-0 group-hover:opacity-100 hidden md:block'}`}
+              className={`p-1 rounded-md transition-colors ${isExpanded || tags.length > 0 ? 'text-[hsl(var(--foreground))] opacity-100' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] opacity-100 md:opacity-0 md:group-hover:opacity-100'}`}
             >
               {isExpanded ? <ChevronDown size={16} /> : <AlignLeft size={16} />}
             </button>
