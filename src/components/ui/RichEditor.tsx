@@ -521,13 +521,7 @@ export const RichEditor = memo(function RichEditor({
       LinkPreview,
       Iframe,
     ],
-    // For markdown mode, do NOT set content here; we set it in the effect below.
-    content: mode === 'markdown' ? false : parseContent(initialContent, mode),
-    onCreate: ({ editor }) => {
-      if (mode === 'markdown' && initialContent) {
-        editor.commands.setContent(initialContent);
-    }
-    },
+    content: parseContent(initialContent, mode),
     editable: isEditing && !readOnly,
      onSelectionUpdate: () => {
       forceUpdate();
