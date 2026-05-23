@@ -525,7 +525,7 @@ export const RichEditor = memo(function RichEditor({
     content: mode === 'markdown' ? false : parseContent(initialContent, mode),
     onCreate: ({ editor }) => {
       if (mode === 'markdown' && initialContent) {
-     editor.commands.setContent(initialContent);
+        editor.commands.setContent(initialContent);
     }
     },
     editable: isEditing && !readOnly,
