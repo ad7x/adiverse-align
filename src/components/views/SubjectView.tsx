@@ -453,50 +453,77 @@ export function SubjectView({ subjectId, highlightId }: { subjectId: string; hig
 
   // ─── AI Prompt ─────────────────────────────────────────────────
 
-  const fullPromptText = `Generate a VALID JSON checklist for my study tracker app.
+  const fullPromptText = `Generate a VALID JSON checklist for my Align OS app.
 
-STRICT RULES:
+STRICT OUTPUT RULES:
+- Return ONLY raw JSON.
+- Do NOT include explanations, notes, comments, or any extra text outside the JSON.
+- Output must be syntactically valid JSON that can be parsed directly.
+- Follow the schema EXACTLY. Do not add, remove, rename, or infer extra fields.
+- completed must ALWAYS be false.
+- section and subsection descriptions must ALWAYS be empty strings if such fields exist.
+- Preserve exact data types.
 
-Return ONLY raw JSON.
-Do NOT include markdown formatting wrappers (no \`\`\`json).
-Do NOT explain anything.
-
-JSON structure must EXACTLY follow this schema:
-
+REQUIRED JSON SCHEMA:
 {
   "sections": [
     {
       "title": "Section Name",
-      "description": "Section description in Markdown format (optional)",
-      "tags": ["tag1", "tag2"],
       "subsections": [
         {
           "title": "Subsection Name",
-          "description": "Subsection description in Markdown format (optional)",
-          "tags": ["tag3"],
           "tasks": [
-            { "title": "Task name", "completed": false, "description": "Task description in Markdown format (optional)", "tags": ["tag4"] }
+            {
+              "title": "Task name",
+              "completed": false,
+              "description": "Task description in Markdown format",
+              "tags": ["tag1", "tag2"]
+            }
           ]
         }
       ],
       "tasks": [
-        { "title": "Task name", "completed": false, "description": "Task description in Markdown format (optional)", "tags": ["tag5"] }
+        {
+          "title": "Task name",
+          "completed": false,
+          "description": "Task description in Markdown format",
+          "tags": ["tag3"]
+        }
       ]
     }
-  ],
-  "tasks": [
-    { "title": "Root level flat task name", "completed": false, "description": "Task description in Markdown format (optional)", "tags": ["tag6"] }
   ]
 }
 
-REQUIREMENTS:
-- Group related topics into sections
-- Use subsections when useful
-- Keep titles concise but descriptive
-- completed must always be false
-- description fields are optional but must use Markdown formatting (bold, italic, list items, etc.) if provided
-- tags fields are optional list of tags
-- JSON must be syntactically valid`;
+CONTENT REQUIREMENTS:
+- Build a structured study checklist from the syllabus/topic/source I provide.
+- if source is lecture or notes sequence type to be as per sequence and should always include everything in that source in same order and almost same name as in source with as much imformation from the source
+- Group related concepts into logical sections.
+- Use subsections where hierarchy makes sense.
+- Keep titles concise, clear, and exam-focused.
+- Task descriptions must be detailed, practical, and useful for revision.
+- Write ALL task descriptions in Hinglish (Hindi + English mix).
+- Every description must use Markdown formatting.
+
+Each task description should include in this exact order (default language: Eng, is user mention should be in theirs choosen language. like hinglish etc and also take care of description tone if user mention ):
+1. **Short Overview** → Topic quick concept explanation.
+2. **Detailed Explanation** → Exam-oriented explanation in simple.
+3. **Important Exam Questions** → Likely questions examiner pooch sakta hai.
+4. **Formula / Definitions** → If relevant.
+5. **Common Mistakes / Confusion Points**
+6. **Revision Priority Note**
+
+TAG RULES:
+Add meaningful tags per task such as:
+- Priority: "P1", "P2", "P3"
+- Scoring: "high-scoring", "medium-scoring", "low-scoring"
+- Importance: "must-do", "important", "revision-only"
+- Type: "theory", "numerical", "conceptual", "definition"
+
+Example:
+["P1", "high-scoring", "must-do", "numerical"]
+
+
+`;
 
   const handleCopyPrompt = async () => {
     try {
